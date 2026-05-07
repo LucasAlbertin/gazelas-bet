@@ -9,7 +9,7 @@ st.set_page_config(page_title="Gazelas Bet 2026", layout="centered")
 # Conexão com Supabase (Lendo dos Secrets para sua segurança)
 SUPABASE_URL = "https://busfsfrcodfnjgkizfme.supabase.co"
 SUPABASE_KEY = "sb_publishable_tnx9hoG8lqnwvS2Po02GWQ_d9EcB2AL"
-supabase = create_client(url, key)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- 🔐 CREDENCIAIS DO ADMIN ---
 ADMIN_USER = "Admin"
