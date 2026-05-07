@@ -7,8 +7,8 @@ from supabase import create_client
 st.set_page_config(page_title="Gazelas Bet 2026", layout="centered")
 
 # Conexão com Supabase (Lendo dos Secrets para sua segurança)
-url = st.secrets["SUPABASE_URL"]
-key = st.secrets["SUPABASE_KEY"]
+SUPABASE_URL = "https://busfsfrcodfnjgkizfme.supabase.co"
+SUPABASE_KEY = "sb_publishable_tnx9hoG8lqnwvS2Po02GWQ_d9EcB2AL"
 supabase = create_client(url, key)
 
 # --- 🔐 CREDENCIAIS DO ADMIN ---
