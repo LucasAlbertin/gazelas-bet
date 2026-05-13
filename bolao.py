@@ -13,7 +13,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- 🔐 CREDENCIAIS DO ADMIN ---
 ADMIN_USER = "Admin"
-ADMIN_PASS = "gazelas123" # <- Pode mudar esta senha depois se quiser
+ADMIN_PASS = "gazelas123" 
 
 # --- FUNÇÕES DE BANCO DE DADOS (SUPABASE) ---
 
@@ -43,8 +43,8 @@ def get_todos_usuarios():
 def atualizar_resultado_real(j_id, g_a, g_b):
     supabase.table("jogos").update({"gols_a": g_a, "gols_b": g_b}).eq("id", j_id).execute()
 
-def adicionar_novo_jogo(time_a, time_b, data_hora):
-    data = {"time_a": time_a, "time_b": time_b, "data_hora": data_hora}
+def adicionar_novo_jogo(time_a, time_b, data_hora, fase):
+    data = {"time_a": time_a, "time_b": time_b, "data_hora": data_hora, "fase": fase}
     supabase.table("jogos").insert(data).execute()
 
 def reset_banco_dados():
@@ -78,8 +78,11 @@ def calcular_ranking():
         if p['jogo_id'] in jogos_dict:
             j = jogos_dict[p['jogo_id']]
             pts = 0
-            pa, pb = p['palpite_a'], p['palpite_b']
-            ra, rb = j['gols_a'], j['gols_b']
+            
+            # Blindagem: Forçando a conversão para inteiro
+            pa, pb = int(p['palpite_a']), int(p['palpite_b'])
+            ra, rb = int(j['gols_a']), int(j['gols_b'])
+            
             if pa == ra and pb == rb: pts = 3
             elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb): pts = 1
             if p['usuario'] in pontos: pontos[p['usuario']] += pts
@@ -205,7 +208,6 @@ else:
             if not jogos.empty:
                 p_u = get_palpites_usuario(user)
                 
-                # Ajuste de data do Supabase (que às vezes retorna com 'T' no meio)
                 jogos['data_apenas'] = pd.to_datetime(jogos['data_hora'].str.replace('T', ' ')).dt.strftime('%d/%m/%Y')
                 dias_unicos = jogos['data_apenas'].unique()
                 
@@ -215,6 +217,11 @@ else:
                         
                         for _, j in jogos_do_dia.iterrows():
                             st.markdown("---")
+                            # Mostrando a fase do torneio acima do jogo
+                            fase_jogo = j.get('fase', 'Fase de Grupos')
+                            if not pd.notna(fase_jogo): fase_jogo = 'Fase de Grupos'
+                            st.caption(f"🏆 {fase_jogo}")
+                            
                             dt_str = j['data_hora'].replace('T', ' ')
                             h_j = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
                             travado = datetime.now() >= h_j
@@ -239,6 +246,7 @@ else:
                                 if st.button(f"Salvar {j['time_a']} x {j['time_b']}", key=f"btn_{j['id']}"):
                                     salvar_palpite(user, int(j['id']), pa_a, pa_b)
                                     st.success("Salvo!")
+                                    st.rerun() # Atualiza a tela imediatamente
                                 st.caption(f"Fecha às: {h_j.strftime('%H:%M')}")
             else:
                 st.info("Aguardando o Admin cadastrar os jogos da Copa.")
@@ -258,26 +266,55 @@ else:
             st.info("Nenhum usuário no ranking ainda.")
 
     with tab3:
-        st.subheader("👀 Espiar")
+        st.subheader("👀 Espiar Palpites")
         js = get_jogos()
         if not js.empty:
             ops = {}
             for _, j in js.iterrows():
                 dt_str = j['data_hora'].replace('T', ' ')
                 dt_obj = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                ops[j['id']] = f"{j['time_a']} x {j['time_b']} ({dt_obj.strftime('%d/%m %H:%M')})"
+                fase_lbl = j.get('fase', 'Fase de Grupos')
+                if not pd.notna(fase_lbl): fase_lbl = 'Fase de Grupos'
+                ops[j['id']] = f"[{fase_lbl}] {j['time_a']} x {j['time_b']} ({dt_obj.strftime('%d/%m %H:%M')})"
                 
-            sel = st.selectbox("Jogo:", options=list(ops.keys()), format_func=lambda x: ops[x])
+            sel = st.selectbox("Escolha o jogo:", options=list(ops.keys()), format_func=lambda x: ops[x])
             if sel:
                 j_i = js[js['id'] == sel].iloc[0]
                 dt_str = j_i['data_hora'].replace('T', ' ')
+                
                 if datetime.now() >= datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S'):
                     df_palpites_jogo = get_todos_palpites_do_jogo(sel)
+                    
                     if not df_palpites_jogo.empty:
-                        st.dataframe(df_palpites_jogo, hide_index=True, use_container_width=True)
+                        ra = j_i['gols_a']
+                        rb = j_i['gols_b']
+                        
+                        placar_a = int(ra) if pd.notnull(ra) else '?'
+                        placar_b = int(rb) if pd.notnull(rb) else '?'
+                        st.markdown(f"### {j_i['time_a']}  **{placar_a} x {placar_b}**  {j_i['time_b']}")
+                        st.caption("Legenda: 🟩 Placar Exato (+3) | 🟦 Vencedor/Empate (+1) | 🟥 Errou (0)")
+                        st.markdown("---")
+                        
+                        for _, row in df_palpites_jogo.iterrows():
+                            participante = row['Participante']
+                            pa = int(row['Gols A'])
+                            pb = int(row['Gols B'])
+                            txt = f"**{participante}** apostou: **{pa} x {pb}**"
+                            
+                            if pd.notnull(ra) and pd.notnull(rb):
+                                ra_int, rb_int = int(ra), int(rb)
+                                if pa == ra_int and pb == rb_int:
+                                    st.success(f"🎯 {txt}") 
+                                elif (pa > pb and ra_int > rb_int) or (pa < pb and ra_int < rb_int) or (pa == pb and ra_int == rb_int):
+                                    st.info(f"👍 {txt}") 
+                                else:
+                                    st.error(f"❌ {txt}") 
+                            else:
+                                st.write(f"⏳ {txt}")
                     else:
                         st.info("Ninguém deu palpite para este jogo ainda.")
-                else: st.warning("⚠️ Shhhh! Os palpites estão ocultos para ninguém copiar!")
+                else: 
+                    st.warning("⚠️ Shhhh! Os palpites estão ocultos para ninguém copiar! Volte na hora do jogo.")
         else:
             st.info("Nenhum jogo cadastrado.")
 
@@ -309,7 +346,10 @@ else:
             if not jogos_adm.empty:
                 for _, jo in jogos_adm.iterrows():
                     c_a, c_b, c_c, c_d = st.columns([2,1,1,2])
-                    with c_a: st.write(f"{jo['time_a']} x {jo['time_b']}")
+                    fase_lbl = jo.get('fase', 'Fase de Grupos')
+                    if not pd.notna(fase_lbl): fase_lbl = 'Fase de Grupos'
+                    with c_a: st.write(f"[{fase_lbl}] {jo['time_a']} x {jo['time_b']}")
+                    
                     ga = int(jo['gols_a']) if pd.notnull(jo['gols_a']) else 0
                     gb = int(jo['gols_b']) if pd.notnull(jo['gols_b']) else 0
                     with c_b: n_ga = st.number_input("G_A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
@@ -318,20 +358,24 @@ else:
                         if st.button("Salvar Resultado", key=f"ad_btn_{jo['id']}"):
                             atualizar_resultado_real(int(jo['id']), n_ga, n_gb)
                             st.success("Atualizado!")
+                            st.rerun() # Atualiza a tela imediatamente para refletir no Ranking
                         
             st.markdown("---")
-            st.subheader("➕ Adicionar Jogo (Oitavas, Quartas...)")
-            c_t1, c_t2, c_dt, c_bt = st.columns([2, 2, 2, 1])
+            st.subheader("➕ Adicionar Jogo (Mata-mata)")
+            c_t1, c_t2, c_fase, c_dt, c_bt = st.columns([2, 2, 2, 2, 1])
             with c_t1: novo_t_a = st.text_input("Time A (Ex: 🇧🇷 Brasil)")
             with c_t2: novo_t_b = st.text_input("Time B (Ex: 🇫🇷 França)")
-            with c_dt: novo_data = st.text_input("Data (AAAA-MM-DD HH:MM:SS)", value="2026-06-28 16:00:00")
+            with c_fase: 
+                opcoes_fase = ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "3º Lugar", "Final"]
+                nova_fase = st.selectbox("Fase do Torneio", opcoes_fase, index=2) # Padrão: Oitavas
+            with c_dt: novo_data = st.text_input("Data", value="2026-06-28 16:00:00")
             with c_bt: 
-                st.write("") 
-                st.write("")
+                st.write(""); st.write("")
                 if st.button("Criar", type="primary"):
                     if novo_t_a and novo_t_b and novo_data:
-                        adicionar_novo_jogo(novo_t_a, novo_t_b, novo_data)
-                        st.success("Adicionado com sucesso!")
+                        adicionar_novo_jogo(novo_t_a, novo_t_b, novo_data, nova_fase)
+                        st.success("Adicionado!")
+                        st.rerun() # Atualiza a tela na hora
                     else:
                         st.warning("Preencha todos os campos!")
 
