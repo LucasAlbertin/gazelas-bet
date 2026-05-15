@@ -271,60 +271,59 @@ else:
         else:
             st.info("Nenhum usuário no ranking ainda.")
 
-    with tab3:
+     with tab3:
         st.subheader("👀 Espiar Palpites")
         js = get_jogos()
         if not js.empty:
-            ops = {}
-            for _, j in js.iterrows():
-                dt_str = j['data_hora'].replace('T', ' ')
-                dt_obj = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                fase_lbl = j.get('fase', 'Fase de Grupos')
-                if not pd.notna(fase_lbl): fase_lbl = 'Fase de Grupos'
-                ops[j['id']] = f"[{fase_lbl}] {j['time_a']} x {j['time_b']} ({dt_obj.strftime('%d/%m %H:%M')})"
-                
-            sel = st.selectbox("Escolha o jogo:", options=list(ops.keys()), format_func=lambda x: ops[x])
-            if sel:
-                j_i = js[js['id'] == sel].iloc[0]
-                dt_str = j_i['data_hora'].replace('T', ' ')
-                
-                # --- A MÁGICA DO FUSO HORÁRIO BRASILEIRO AQUI ---
-                fuso_br = pytz.timezone('America/Sao_Paulo')
-                agora_br = datetime.now(fuso_br).replace(tzinfo=None)
-                
-                if agora_br >= datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S'):
-                    df_palpites_jogo = get_todos_palpites_do_jogo(sel)
+            # Organizando por data igual na aba de Palpites
+            js['data_apenas'] = pd.to_datetime(js['data_hora'].str.replace('T', ' ')).dt.strftime('%d/%m/%Y')
+            dias_unicos = js['data_apenas'].unique()
+
+            fuso_br = pytz.timezone('America/Sao_Paulo')
+            agora_br = datetime.now(fuso_br).replace(tzinfo=None)
+
+            for dia in dias_unicos:
+                with st.expander(f"📅 Jogos do dia {dia}"):
+                    jogos_do_dia = js[js['data_apenas'] == dia]
                     
-                    if not df_palpites_jogo.empty:
-                        ra = j_i['gols_a']
-                        rb = j_i['gols_b']
+                    for _, j_i in jogos_do_dia.iterrows():
+                        st.markdown(f"**{j_i['time_a']} x {j_i['time_b']}**")
                         
-                        placar_a = int(ra) if pd.notnull(ra) else '?'
-                        placar_b = int(rb) if pd.notnull(rb) else '?'
-                        st.markdown(f"### {j_i['time_a']}  **{placar_a} x {placar_b}** {j_i['time_b']}")
-                        st.caption("Legenda: 🟩 Placar Exato (+3) | 🟦 Vencedor/Empate (+1) | 🟥 Errou (0)")
-                        st.markdown("---")
+                        dt_str = j_i['data_hora'].replace('T', ' ')
+                        h_j = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
                         
-                        for _, row in df_palpites_jogo.iterrows():
-                            participante = row['Participante']
-                            pa = int(row['Gols A'])
-                            pb = int(row['Gols B'])
-                            txt = f"**{participante}** apostou: **{pa} x {pb}**"
-                            
-                            if pd.notnull(ra) and pd.notnull(rb):
-                                ra_int, rb_int = int(ra), int(rb)
-                                if pa == ra_int and pb == rb_int:
-                                    st.success(f"🎯 {txt}") 
-                                elif (pa > pb and ra_int > rb_int) or (pa < pb and ra_int < rb_int) or (pa == pb and ra_int == rb_int):
-                                    st.info(f"👍 {txt}") 
+                        # Só libera se o jogo já começou
+                        if agora_br >= h_j:
+                            if st.button(f"Ver palpites: {j_i['time_a']} x {j_i['time_b']}", key=f"espiar_{j_i['id']}"):
+                                df_palpites_jogo = get_todos_palpites_do_jogo(j_i['id'])
+                                
+                                if not df_palpites_jogo.empty:
+                                    ra, rb = j_i['gols_a'], j_i['gols_b']
+                                    placar_a = int(ra) if pd.notnull(ra) else '?'
+                                    placar_b = int(rb) if pd.notnull(rb) else '?'
+                                    
+                                    st.info(f"Placar Real: {j_i['time_a']} {placar_a} x {placar_b} {j_i['time_b']}")
+                                    
+                                    for _, row in df_palpites_jogo.iterrows():
+                                        participante = row['Participante']
+                                        pa, pb = int(row['Gols A']), int(row['Gols B'])
+                                        txt = f"**{participante}** apostou: **{pa} x {pb}**"
+                                        
+                                        if pd.notnull(ra) and pd.notnull(rb):
+                                            ra_i, rb_i = int(ra), int(rb)
+                                            if pa == ra_i and pb == rb_i:
+                                                st.success(f"🎯 {txt}")
+                                            elif (pa > pb and ra_i > rb_i) or (pa < pb and ra_i < rb_i) or (pa == pb and ra_i == rb_i):
+                                                st.info(f"👍 {txt}")
+                                            else:
+                                                st.error(f"❌ {txt}")
+                                        else:
+                                            st.write(f"⏳ {txt}")
                                 else:
-                                    st.error(f"❌ {txt}") 
-                            else:
-                                st.write(f"⏳ {txt}")
-                    else:
-                        st.info("Ninguém deu palpite para este jogo ainda.")
-                else: 
-                    st.warning("⚠️ Shhhh! Os palpites estão ocultos para ninguém copiar! Volte na hora do jogo.")
+                                    st.caption("Ninguém palpitou neste jogo.")
+                        else:
+                            st.warning("⚠️ Palpites ocultos até o início do jogo.", icon="🔒")
+                        st.markdown("---")
         else:
             st.info("Nenhum jogo cadastrado.")
 
