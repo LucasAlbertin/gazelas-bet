@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import pytz 
 from supabase import create_client
 
 # --- CONFIGURAÇÃO INICIAL ---
@@ -224,7 +225,12 @@ else:
                             
                             dt_str = j['data_hora'].replace('T', ' ')
                             h_j = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                            travado = datetime.now() >= h_j
+                            
+                            # --- A MÁGICA DO FUSO HORÁRIO BRASILEIRO AQUI ---
+                            fuso_br = pytz.timezone('America/Sao_Paulo')
+                            agora_br = datetime.now(fuso_br).replace(tzinfo=None)
+                            travado = agora_br >= h_j
+                            # --------------------------------------------------
                             
                             c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
                             with c1: st.write(f"**{j['time_a']}**")
@@ -265,7 +271,7 @@ else:
         else:
             st.info("Nenhum usuário no ranking ainda.")
 
-    with tab3:
+  with tab3:
         st.subheader("👀 Espiar Palpites")
         js = get_jogos()
         if not js.empty:
@@ -282,7 +288,12 @@ else:
                 j_i = js[js['id'] == sel].iloc[0]
                 dt_str = j_i['data_hora'].replace('T', ' ')
                 
-                if datetime.now() >= datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S'):
+                # --- A MÁGICA DO FUSO HORÁRIO BRASILEIRO AQUI ---
+                fuso_br = pytz.timezone('America/Sao_Paulo')
+                agora_br = datetime.now(fuso_br).replace(tzinfo=None)
+                
+                if agora_br >= datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S'):
+                # ------------------------------------------------
                     df_palpites_jogo = get_todos_palpites_do_jogo(sel)
                     
                     if not df_palpites_jogo.empty:
@@ -291,7 +302,7 @@ else:
                         
                         placar_a = int(ra) if pd.notnull(ra) else '?'
                         placar_b = int(rb) if pd.notnull(rb) else '?'
-                        st.markdown(f"### {j_i['time_a']}  **{placar_a} x {placar_b}**  {j_i['time_b']}")
+                        st.markdown(f"### {j_i['time_a']}  **{placar_a} x {placar_b}** {j_i['time_b']}")
                         st.caption("Legenda: 🟩 Placar Exato (+3) | 🟦 Vencedor/Empate (+1) | 🟥 Errou (0)")
                         st.markdown("---")
                         
