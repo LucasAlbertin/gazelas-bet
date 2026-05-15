@@ -271,7 +271,7 @@ else:
         else:
             st.info("Nenhum usuário no ranking ainda.")
 
-     with tab3:
+    with tab3:
         st.subheader("👀 Espiar Palpites")
         js = get_jogos()
         if not js.empty:
