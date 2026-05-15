@@ -271,7 +271,7 @@ else:
         else:
             st.info("Nenhum usuário no ranking ainda.")
 
-  with tab3:
+    with tab3:
         st.subheader("👀 Espiar Palpites")
         js = get_jogos()
         if not js.empty:
@@ -293,7 +293,6 @@ else:
                 agora_br = datetime.now(fuso_br).replace(tzinfo=None)
                 
                 if agora_br >= datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S'):
-                # ------------------------------------------------
                     df_palpites_jogo = get_todos_palpites_do_jogo(sel)
                     
                     if not df_palpites_jogo.empty:
