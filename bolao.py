@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Injeção do seu CSS Moderno adaptado para manter a estrutura do app
+# Injeção do seu CSS Moderno com os ajustes de tamanho das métricas
 st.markdown("""
 <style>
 .stApp {
@@ -68,11 +68,21 @@ p, span, label {
     font-size: 16px;
     font-weight: 700;
 }
+
+/* --- AJUSTE COMPORTAMENTOst.metric (DIMINUIR FONTE) --- */
 div[data-testid="metric-container"] {
     background: #151C32;
     border-radius: 18px;
-    padding: 15px;
+    padding: 12px;
     border: 1px solid rgba(255,255,255,0.05);
+}
+div[data-testid="stMetricValue"] {
+    font-size: 24px !important; /* Diminui o tamanho do número principal */
+    font-weight: bold;
+}
+div[data-testid="stMetricLabel"] {
+    font-size: 14px !important; /* Ajusta o tamanho do rótulo */
+    color: #A0AEC0 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -260,7 +270,7 @@ else:
             st.session_state.usuario_logado = None
             st.rerun()
 
-    # Dashboard de Métricas Modernas
+    # Dashboard de Métricas Modernas (Com os tamanhos reduzidos via CSS lá em cima)
     total_jogos = len(jogos)
     total_users = len(ranking)
     lider = ranking.iloc[0]['Participante'] if not ranking.empty else "-"
@@ -324,10 +334,11 @@ else:
                             st.markdown("</div>", unsafe_allow_html=True)
             else: st.info("Aguardando o Admin cadastrar os jogos.")
 
-    # 2. ABA RANKING CARDS
+    # 2. ABA RANKING CARDS + CAIXA COPIÁVEL
     with tab2:
         st.subheader("🏆 Ranking Geral do Grupo")
         if not ranking.empty:
+            # Primeiro desenha o visual bonitão
             for i, r in ranking.iterrows():
                 pos = i + 1
                 classe = "rank-card"
@@ -344,6 +355,19 @@ else:
                     <p style='margin:5px 0 0 0; color:#00E676; font-weight:bold;'>{r['Pontos']} pontos</p>
                 </div>
                 """, unsafe_allow_html=True)
+            
+            st.markdown("---")
+            # Segundo gera o bloco de texto puro e injeta na caixinha copiável do Streamlit
+            st.write("📋 **Quer mandar no grupo do WhatsApp?** Clique no botão do canto superior direito da caixa abaixo para copiar!")
+            
+            texto_copia = "🏆 GAZELAS BET - CLASSIFICAÇÃO ATUALIZADA 🏆\n\n"
+            for i, r in ranking.iterrows():
+                pos = i + 1
+                emoji_c = "🥇" if pos==1 else "🥈" if pos==2 else "🥉" if pos==3 else "▪️"
+                texto_copia += f"{emoji_c} {pos}º {r['Participante']} — {r['Pontos']} pts\n"
+            
+            st.code(texto_copia, language="text")
+            
         else: st.info("Nenhum usuário pontuou ainda.")
 
     # 3. ABA ESPIAR (SANFONA + CORES)
@@ -451,4 +475,4 @@ else:
                 reset_banco_dados()
                 st.success("Banco de dados limpo!")
                 st.balloons()
-        else: st.error("Acesso restrito ao Administrador.")
+        else: st.error("Acesso restrito ao Administrator.")
