@@ -77,10 +77,10 @@ div[data-testid="metric-container"] {
 </style>
 """, unsafe_allow_html=True)
 
-# Conexão com Supabase (Segura por Secrets)
-url = st.secrets["SUPABASE_URL"]
-key = st.secrets["SUPABASE_KEY"]
-supabase = create_client(url, key)
+# Conexão com Supabase (Lendo dos Secrets para sua segurança)
+SUPABASE_URL = "https://busfsfrcodfnjgkizfme.supabase.co"
+SUPABASE_KEY = "sb_publishable_tnx9hoG8lqnwvS2Po02GWQ_d9EcB2AL"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ADMIN_USER = "Admin"
 ADMIN_PASS = "gazelas123" 
