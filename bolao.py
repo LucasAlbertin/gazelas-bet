@@ -9,7 +9,7 @@ from supabase import create_client
 # =========================================================
 st.set_page_config(
     page_title="Gazelas Bet 2026",
-    page_icon="⚽🦌",
+    page_icon="⚽",
     layout="centered",
     initial_sidebar_state="expanded"
 )
@@ -69,7 +69,7 @@ p, span, label {
     font-weight: 700;
 }
 
-/* --- AJUSTE COMPORTAMENTOst.metric (DIMINUIR FONTE) --- */
+/* --- DASHBOARD COMPACTO --- */
 div[data-testid="metric-container"] {
     background: #151C32;
     border-radius: 18px;
@@ -77,11 +77,11 @@ div[data-testid="metric-container"] {
     border: 1px solid rgba(255,255,255,0.05);
 }
 div[data-testid="stMetricValue"] {
-    font-size: 24px !important; /* Diminui o tamanho do número principal */
+    font-size: 24px !important; 
     font-weight: bold;
 }
 div[data-testid="stMetricLabel"] {
-    font-size: 14px !important; /* Ajusta o tamanho do rótulo */
+    font-size: 14px !important; 
     color: #A0AEC0 !important;
 }
 </style>
@@ -98,6 +98,9 @@ ADMIN_PASS = "gazelas123"
 # =========================================================
 # FUNÇÕES DE BANCO DE DADOS (SUPABASE)
 # =========================================================
+
+# Cache inteligente de 10 minutos (600 segundos) para poupar requisições e carregar na hora
+@st.cache_data(ttl=600)
 def get_jogos():
     res = supabase.table("jogos").select("*").order("data_hora").execute()
     return pd.DataFrame(res.data)
@@ -260,7 +263,6 @@ else:
     jogos = get_jogos()
     ranking = calcular_ranking()
     
-    # Painel Superior de Boas-Vindas
     col_n, col_s = st.columns([5, 1])
     with col_n: 
         if user == "ADMIN": st.error("Logado como **ADMINISTRADOR MESTRE**.")
@@ -270,7 +272,7 @@ else:
             st.session_state.usuario_logado = None
             st.rerun()
 
-    # Dashboard de Métricas Modernas (Com os tamanhos reduzidos via CSS lá em cima)
+    # Painel de métricas compactas (tamanhos controlados por CSS)
     total_jogos = len(jogos)
     total_users = len(ranking)
     lider = ranking.iloc[0]['Participante'] if not ranking.empty else "-"
@@ -334,11 +336,10 @@ else:
                             st.markdown("</div>", unsafe_allow_html=True)
             else: st.info("Aguardando o Admin cadastrar os jogos.")
 
-    # 2. ABA RANKING CARDS + CAIXA COPIÁVEL
+    # 2. ABA RANKING CARDS + TEXTO COPIÁVEL
     with tab2:
         st.subheader("🏆 Ranking Geral do Grupo")
         if not ranking.empty:
-            # Primeiro desenha o visual bonitão
             for i, r in ranking.iterrows():
                 pos = i + 1
                 classe = "rank-card"
@@ -357,8 +358,7 @@ else:
                 """, unsafe_allow_html=True)
             
             st.markdown("---")
-            # Segundo gera o bloco de texto puro e injeta na caixinha copiável do Streamlit
-            st.write("📋 **Quer mandar no grupo do WhatsApp?** Clique no botão do canto superior direito da caixa abaixo para copiar!")
+            st.write("📋 **Mural para o WhatsApp:** Clique no ícone de cópia da caixinha cinza abaixo!")
             
             texto_copia = "🏆 GAZELAS BET - CLASSIFICAÇÃO ATUALIZADA 🏆\n\n"
             for i, r in ranking.iterrows():
@@ -367,7 +367,6 @@ else:
                 texto_copia += f"{emoji_c} {pos}º {r['Participante']} — {r['Pontos']} pts\n"
             
             st.code(texto_copia, language="text")
-            
         else: st.info("Nenhum usuário pontuou ainda.")
 
     # 3. ABA ESPIAR (SANFONA + CORES)
@@ -424,7 +423,7 @@ else:
                 df_grupo.index = df_grupo.index + 1
                 st.dataframe(df_grupo, use_container_width=True)
 
-    # 5. ABA ADMIN
+    # 5. ABA ADMIN (COM LIMPEZA FORÇADA DO CACHE)
     with tab4:
         if user == "ADMIN":
             st.subheader("🔑 Painel do Mestre")
@@ -447,7 +446,8 @@ else:
                     with c_d: 
                         if st.button("Salvar Resultado", key=f"ad_btn_{jo['id']}"):
                             atualizar_resultado_real(int(jo['id']), n_ga, n_gb)
-                            st.success("Atualizado!")
+                            st.cache_data.clear() # Limpa cache de jogos para recalcular tudo sem atrasos
+                            st.success("Resultado Salvo!")
                             st.rerun()
                         
             st.markdown("---")
@@ -464,6 +464,7 @@ else:
                 if st.button("Criar", type="primary"):
                     if novo_t_a and novo_t_b and novo_data:
                         adicionar_novo_jogo(novo_t_a, novo_t_b, novo_data, nova_fase)
+                        st.cache_data.clear() # Limpa o cache imediatamente para o novo jogo aparecer na hora
                         st.success("Adicionado!")
                         st.rerun()
                     else: st.warning("Preencha todos os campos!")
@@ -473,6 +474,7 @@ else:
             confirmar_reset = st.checkbox("Eu tenho certeza absoluta que quero APAGAR todos os dados para o lançamento oficial.")
             if confirmar_reset and st.button("LIMPAR TUDO AGORA", type="primary"):
                 reset_banco_dados()
+                st.cache_data.clear()
                 st.success("Banco de dados limpo!")
                 st.balloons()
         else: st.error("Acesso restrito ao Administrator.")
