@@ -99,7 +99,6 @@ ADMIN_PASS = "gazelas123"
 # FUNÇÕES DE BANCO DE DADOS (SUPABASE)
 # =========================================================
 
-# Cache inteligente de 10 minutos (600 segundos) para poupar requisições e carregar na hora
 @st.cache_data(ttl=600)
 def get_jogos():
     res = supabase.table("jogos").select("*").order("data_hora").execute()
@@ -145,7 +144,7 @@ def get_palpites_usuario(usuario):
 def get_todos_palpites_do_jogo(jogo_id):
     res = supabase.table("palpites").select("usuario, palpite_a, palpite_b").eq("jogo_id", jogo_id).execute()
     if not res.data:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=['Participante', 'Gols A', 'Gols B'])
     df = pd.DataFrame(res.data)
     df.rename(columns={'usuario': 'Participante', 'palpite_a': 'Gols A', 'palpite_b': 'Gols B'}, inplace=True)
     return df
@@ -272,7 +271,6 @@ else:
             st.session_state.usuario_logado = None
             st.rerun()
 
-    # Painel de métricas compactas (tamanhos controlados por CSS)
     total_jogos = len(jogos)
     total_users = len(ranking)
     lider = ranking.iloc[0]['Participante'] if not ranking.empty else "-"
@@ -311,23 +309,33 @@ else:
                             agora_br = datetime.now(fuso_br).replace(tzinfo=None)
                             travado = agora_br >= h_j
                             
+                            p_at = p_u[p_u['jogo_id'] == j['id']]
+                            ja_palpitou = not p_at.empty # Checa se existe a linha no Supabase
+                            
+                            v_a = int(p_at.iloc[0]['palpite_a']) if ja_palpitou else 0
+                            v_b = int(p_at.iloc[0]['palpite_b']) if ja_palpitou else 0
+                            
                             c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
                             with c1: st.write(f"**{j['time_a']}**")
                             with c5: st.write(f"**{j['time_b']}**")
                             
-                            p_at = p_u[p_u['jogo_id'] == j['id']]
-                            v_a = int(p_at.iloc[0]['palpite_a']) if not p_at.empty else 0
-                            v_b = int(p_at.iloc[0]['palpite_b']) if not p_at.empty else 0
-                            
                             if travado:
-                                with c2: st.warning(f"{v_a}", icon="🔒")
+                                with c2: st.warning(f"{v_a}" if ja_palpitou else "-", icon="🔒")
                                 with c3: st.write("X")
-                                with c4: st.warning(f"{v_b}", icon="🔒")
-                                st.caption(f"Jogo iniciado ({h_j.strftime('%H:%M')}).")
+                                with c4: st.warning(f"{v_b}" if ja_palpitou else "-", icon="🔒")
+                                if not ja_palpitou:
+                                    st.error("❌ Você não deixou palpite para este jogo antes do início.")
+                                else:
+                                    st.caption(f"Jogo iniciado ({h_j.strftime('%H:%M')}).")
                             else:
                                 with c2: pa_a = st.number_input(f"A_{j['id']}", min_value=0, value=v_a, label_visibility="collapsed")
                                 with c3: st.write("X")
                                 with c4: pa_b = st.number_input(f"B_{j['id']}", min_value=0, value=v_b, label_visibility="collapsed")
+                                
+                                # AVISO INTELIGENTE DE UX
+                                if not ja_palpitou:
+                                    st.warning("⚠️ Você ainda não palpitou neste jogo! Configure seu placar acima e clique em salvar.")
+                                
                                 if st.button(f"Salvar {j['time_a']} x {j['time_b']}", key=f"btn_{j['id']}"):
                                     salvar_palpite(user, int(j['id']), pa_a, pa_b)
                                     st.toast("Palpite salvo com sucesso!", icon="⚽")
@@ -369,7 +377,7 @@ else:
             st.code(texto_copia, language="text")
         else: st.info("Nenhum usuário pontuou ainda.")
 
-    # 3. ABA ESPIAR (SANFONA + CORES)
+    # 3. ABA ESPIAR (SANFONA + AVISOS SE NÃO PALPITOU)
     with tab3:
         st.subheader("👀 Espiar Palpites")
         if not jogos.empty:
@@ -377,6 +385,9 @@ else:
             dias_unicos = jogos['data_apenas'].unique()
             fuso_br = pytz.timezone('America/Sao_Paulo')
             agora_br = datetime.now(fuso_br).replace(tzinfo=None)
+
+            # Lista mestre de participantes cadastrados para cruzar dados
+            todos_users_nomes = ranking['Participante'].tolist() if not ranking.empty else []
 
             for dia in dias_unicos:
                 with st.expander(f"📅 Jogos do dia {dia}"):
@@ -389,14 +400,20 @@ else:
                         if agora_br >= h_j:
                             if st.button(f"Ver palpites: {j_i['time_a']} x {j_i['time_b']}", key=f"espiar_{j_i['id']}"):
                                 df_palpites_jogo = get_todos_palpites_do_jogo(j_i['id'])
+                                
+                                ra, rb = j_i['gols_a'], j_i['gols_b']
+                                placar_a = int(ra) if pd.notnull(ra) else '?'
+                                placar_b = int(rb) if pd.notnull(rb) else '?'
+                                st.info(f"Placar Real: {j_i['time_a']} {placar_a} x {placar_b} {j_i['time_b']}")
+                                
+                                users_que_palpitaram = []
+                                
+                                # Mostra quem de fato palpitou
                                 if not df_palpites_jogo.empty:
-                                    ra, rb = j_i['gols_a'], j_i['gols_b']
-                                    placar_a = int(ra) if pd.notnull(ra) else '?'
-                                    placar_b = int(rb) if pd.notnull(rb) else '?'
-                                    st.info(f"Placar Real: {j_i['time_a']} {placar_a} x {placar_b} {j_i['time_b']}")
-                                    
                                     for _, row in df_palpites_jogo.iterrows():
                                         participante = row['Participante']
+                                        users_que_palpitaram.append(participante)
+                                        
                                         pa, pb = int(row['Gols A']), int(row['Gols B'])
                                         txt = f"**{participante}** apostou: **{pa} x {pb}**"
                                         
@@ -406,7 +423,12 @@ else:
                                             elif (pa > pb and ra_i > rb_i) or (pa < pb and ra_i < rb_i) or (pa == pb and ra_i == rb_i): st.info(f"👍 {txt}")
                                             else: st.error(f"❌ {txt}")
                                         else: st.write(f"⏳ {txt}")
-                                else: st.caption("Ninguém palpitou neste jogo.")
+                                
+                                # Cruza os dados e aponta quem ESQUECEU de palpitar
+                                for usr in todos_users_nomes:
+                                    if usr not in users_que_palpitaram and usr != "Admin":
+                                        st.write(f"⚪ **{usr}** não palpitou neste jogo.")
+                                        
                         else: st.warning("⚠️ Palpites ocultos até o início do jogo.", icon="🔒")
                         st.markdown("---")
         else: st.info("Nenhum jogo cadastrado.")
@@ -423,7 +445,7 @@ else:
                 df_grupo.index = df_grupo.index + 1
                 st.dataframe(df_grupo, use_container_width=True)
 
-    # 5. ABA ADMIN (COM LIMPEZA FORÇADA DO CACHE)
+    # 5. ABA ADMIN
     with tab4:
         if user == "ADMIN":
             st.subheader("🔑 Painel do Mestre")
@@ -446,7 +468,7 @@ else:
                     with c_d: 
                         if st.button("Salvar Resultado", key=f"ad_btn_{jo['id']}"):
                             atualizar_resultado_real(int(jo['id']), n_ga, n_gb)
-                            st.cache_data.clear() # Limpa cache de jogos para recalcular tudo sem atrasos
+                            st.cache_data.clear() 
                             st.success("Resultado Salvo!")
                             st.rerun()
                         
@@ -464,7 +486,7 @@ else:
                 if st.button("Criar", type="primary"):
                     if novo_t_a and novo_t_b and novo_data:
                         adicionar_novo_jogo(novo_t_a, novo_t_b, novo_data, nova_fase)
-                        st.cache_data.clear() # Limpa o cache imediatamente para o novo jogo aparecer na hora
+                        st.cache_data.clear() 
                         st.success("Adicionado!")
                         st.rerun()
                     else: st.warning("Preencha todos os campos!")
