@@ -34,16 +34,6 @@ p, span, label { color: #E2E8F0 !important; }
     box-shadow: 0 10px 25px rgba(0,0,0,0.25);
 }
 
-/* Ranking e Regras */
-.rank-card {
-    background: #151C32;
-    padding: 18px;
-    border-radius: 16px;
-    margin-bottom: 12px;
-    border: 1px solid rgba(255,255,255,0.05);
-}
-.gold { border: 2px solid gold; box-shadow: 0 0 25px rgba(255,215,0,0.25); }
-
 /* Botões Modernos */
 .stButton > button {
     width: 100%;
@@ -75,7 +65,7 @@ div[data-testid="stMetricLabel"] { font-size: 14px !important; color: #A0AEC0 !i
 </style>
 """, unsafe_allow_html=True)
 
-# Conexão com Supabase (Lendo dos Secrets para sua segurança)
+# Conexão com Supabase 
 SUPABASE_URL = "https://busfsfrcodfnjgkizfme.supabase.co"
 SUPABASE_KEY = "sb_publishable_tnx9hoG8lqnwvS2Po02GWQ_d9EcB2AL"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -140,7 +130,7 @@ def calcular_ranking():
     palpites_res = supabase.table("palpites").select("*").execute()
     pontos = {u['nome']: 0 for u in usuarios_res.data}
     jogos_dict = {j['id']: j for j in jogos_res.data}
-    for p in palpites_res.data:
+    for p in palindromos := palpites_res.data:
         if p['jogo_id'] in jogos_dict:
             j = jogos_dict[p['jogo_id']]; pa, pb = int(p['palpite_a']), int(p['palpite_b']); ra, rb = int(j['gols_a']), int(j['gols_b'])
             pts = 0
@@ -187,15 +177,12 @@ def calcular_tabela_copa():
     return pd.DataFrame(list(tabela.values()))
 
 # =========================================================
-# HEADER PREMIUM
+# APP UI
 # =========================================================
-st.markdown("<div style='text-align:center;padding:10px 0;'><h1 style='font-size:46px;margin-bottom:0; letter-spacing: 2px;'>⚽ GAZELAS BET</h1><p style='color:#A0AEC0;font-size:16px;'>Bolão Oficial da Copa do Mundo 2026</p></div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align:center;'><h1>⚽ GAZELAS BET</h1></div>", unsafe_allow_html=True)
 
 if 'usuario_logado' not in st.session_state: st.session_state.usuario_logado = None
 
-# =========================================================
-# LOGIN / CADASTRO
-# =========================================================
 if st.session_state.usuario_logado is None:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
@@ -235,6 +222,7 @@ else:
     with tab1:
         if user == "ADMIN": st.warning("Admin não palpita!")
         else:
+            st.subheader("Meus Palpites")
             if not jogos.empty:
                 p_u = get_palpites_usuario(user)
                 jogos['data_apenas'] = pd.to_datetime(jogos['data_hora'].str.replace('T', ' ')).dt.strftime('%d/%m/%Y')
@@ -265,17 +253,49 @@ else:
                                     salvar_palpite(user, int(j['id']), pa_a, pa_b); st.toast("Salvo!"); st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. ABA RANKING
+    # 2. ABA RANKING COMPACTA (DATAFRAME)
     with tab2:
+        st.subheader("🏆 Classificação do Grupo")
         if not ranking.empty:
-            for i, r in ranking.iterrows():
-                pos = i + 1; classe = "rank-card gold" if pos==1 else "rank-card"
-                emoji = "🥇" if pos==1 else "🥈" if pos==2 else "🥉" if pos==3 else "🏅"
-                st.markdown(f"<div class='{classe}'><h4>{emoji} #{pos} — {r['Participante']}</h4><p style='color:#00E676;'>{r['Pontos']} pts</p></div>", unsafe_allow_html=True)
+            # Criamos uma cópia do DataFrame para formatar visualmente
+            df_visual = ranking.copy()
+            
+            # Adiciona a coluna de Posição começando em 1
+            df_visual.insert(0, 'Posição', range(1, len(df_visual) + 1))
+            
+            # Função para emojificar as primeiras colocações
+            def emojificar_posicao(pos):
+                if pos == 1: return "🥇 1º"
+                elif pos == 2: return "🥈 2º"
+                elif pos == 3: return "🥉 3º"
+                return f"▪️ {pos}º"
+            
+            df_visual['Posição'] = df_visual['Posição'].apply(emojificar_posicao)
+            
+            # Exibe a tabela compacta com barra de rolagem inteligente se passar de 30 pessoas
+            st.dataframe(
+                df_visual,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Posição": st.column_config.TextColumn("Posição", width="small"),
+                    "Participante": st.column_config.TextColumn("Participante"),
+                    "Pontos": st.column_config.NumberColumn("Pontos Total", format="%d pts")
+                }
+            )
+            
             st.markdown("---")
-            texto_copia = "🏆 GAZELAS BET\n\n"
-            for i, r in ranking.iterrows(): texto_copia += f"{i+1}º {r['Participante']} - {r['Pontos']} pts\n"
+            st.write("📋 **Mural para o WhatsApp:** Clique no ícone de cópia no canto superior direito do bloco cinza abaixo!")
+            
+            texto_copia = "🏆 GAZELAS BET - RANKING ATUALIZADO 🏆\n\n"
+            for i, r in ranking.iterrows():
+                pos = i + 1
+                emoji_c = "🥇" if pos==1 else "🥈" if pos==2 else "🥉" if pos==3 else "▪️"
+                texto_copia += f"{emoji_c} {pos}º {r['Participante']} — {r['Pontos']} pts\n"
+            
             st.code(texto_copia, language="text")
+        else:
+            st.info("Nenhum usuário pontuou ainda.")
 
     # 3. ABA ESPIAR
     with tab3:
@@ -312,7 +332,7 @@ else:
                 st.markdown(f"### {grupo}")
                 st.dataframe(df_copa[df_copa['Grupo']==grupo].sort_values(by=['Pts','SG','GP'], ascending=False).drop(columns=['Grupo']), use_container_width=True, hide_index=True)
 
-    # 5. ABA REGRAS (NOVA)
+    # 5. ABA REGRAS
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
         st.markdown("""
@@ -333,8 +353,8 @@ else:
                     c1, c2, c3, c4 = st.columns([2,1,1,2])
                     with c1: st.write(f"{jo['time_a']} x {jo['time_b']}")
                     ga = int(jo['gols_a']) if pd.notnull(jo['gols_a']) else 0; gb = int(jo['gols_b']) if pd.notnull(jo['gols_b']) else 0
-                    na = c2.number_input("A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
-                    nb = c3.number_input("B", value=gb, key=f"ad_b_{jo['id']}", label_visibility="collapsed")
+                    na = c1.number_input("A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
+                    nb = c2.number_input("B", value=gb, key=f"ad_b_{jo['id']}", label_visibility="collapsed")
                     if c4.button("Salvar", key=f"ad_btn_{jo['id']}"):
                         atualizar_resultado_real(int(jo['id']), na, nb); st.cache_data.clear(); st.success("Salvo!"); st.rerun()
             st.markdown("---")
