@@ -130,7 +130,7 @@ def calcular_ranking():
     palpites_res = supabase.table("palpites").select("*").execute()
     pontos = {u['nome']: 0 for u in usuarios_res.data}
     jogos_dict = {j['id']: j for j in jogos_res.data}
-    for p in palindromos := palpites_res.data:
+    for p in palindromos = palpites_res.data:
         if p['jogo_id'] in jogos_dict:
             j = jogos_dict[p['jogo_id']]; pa, pb = int(p['palpite_a']), int(p['palpite_b']); ra, rb = int(j['gols_a']), int(j['gols_b'])
             pts = 0
