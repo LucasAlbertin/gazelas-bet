@@ -98,18 +98,17 @@ def verificar_liga_existente(codigo_liga):
     res = supabase.table("ligas").select("*").eq("codigo", codigo_liga.strip().upper()).execute()
     return len(res.data) > 0
 
+def get_todas_ligas():
+    res = supabase.table("ligas").select("*").order("nome").execute()
+    return pd.DataFrame(res.data)
+
 def criar_nova_liga(nome_liga, codigo_liga):
-    try:
-        cod = codigo_liga.strip().upper()
-        supabase.table("ligas").insert({"nome": nome_liga.strip(), "codigo": cod}).execute()
-        return True
-    except Exception as e:
-        print(f"Erro Supabase Liga: {e}")
-        return False
+    cod = codigo_liga.strip().upper()
+    res = supabase.table("ligas").insert({"nome": nome_liga.strip(), "codigo": cod}).execute()
+    return True
 
 def criar_usuario(nome, senha):
     try:
-        # Criamos o usuário globalmente (sem amarrar a uma única liga na criação)
         supabase.table("usuarios").insert({"nome": nome.strip(), "senha": senha}).execute()
         return True
     except:
@@ -171,6 +170,24 @@ def calcular_ranking(codigo_liga):
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
 
+def get_todos_usuarios_global():
+    res = supabase.table("usuarios").select("nome, senha, liga_codigo").order("nome").execute()
+    return pd.DataFrame(res.data)
+
+# --- FUNÇÕES EXCLUSIVAS DE GERENCIAMENTO DO ADMIN ---
+def deletar_usuario(nome_usuario):
+    supabase.table("palpites").delete().eq("usuario", nome_usuario).execute()
+    supabase.table("usuarios").delete().eq("nome", nome_usuario).execute()
+
+def deletar_liga(cod_liga):
+    supabase.table("palpites").delete().eq("liga_codigo", cod_liga).execute()
+    supabase.table("usuarios").update({"liga_codigo": None}).eq("liga_codigo", cod_liga).execute()
+    supabase.table("ligas").delete().eq("codigo", cod_liga).execute()
+
+def deletar_jogo(jogo_id):
+    supabase.table("palpites").delete().eq("jogo_id", jogo_id).execute()
+    supabase.table("jogos").delete().eq("id", jogo_id).execute()
+
 def atualizar_resultado_real(jogo_id, gols_a, gols_b):
     supabase.table("jogos").update({"gols_a": gols_a, "gols_b": gols_b}).eq("id", jogo_id).execute()
 
@@ -223,7 +240,7 @@ def calcular_tabela_copa():
     return pd.DataFrame(list(tabela.values()))
 
 # =========================================================
-# INTERFACE DE LOGIN / CADASTRO COM LIGAS
+# INTERFACE DE LOGIN / CADASTRO
 # =========================================================
 if 'usuario_logado' not in st.session_state: st.session_state.usuario_logado = None
 if 'liga_ativa' not in st.session_state: st.session_state.liga_ativa = None
@@ -234,33 +251,30 @@ if st.session_state.usuario_logado is None:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         aba_login, aba_criar_conta, aba_criar_liga = st.tabs(["🔐 Entrar", "🆕 Criar Conta", "🏆 Criar Liga"])
         
-        # ABA ENTRAR (Pede usuário, senha e código da liga)
+        # ABA ENTRAR
         with aba_login:
             nl = st.text_input("Usuário:", key="login_user")
             sl = st.text_input("Senha:", type="password", key="login_pass")
             ll = st.text_input("Código da Liga:", help="Deixe em branco apenas se for o Admin.", key="login_liga")
             if st.button("Entrar no Sistema", type="primary"):
-                # Validação do Admin
                 if nl == ADMIN_USER and sl == ADMIN_PASS:
                     st.session_state.usuario_logado = "ADMIN"
                     st.session_state.liga_ativa = "GLOBAL"
                     st.rerun()
-                # Validação para jogadores normais
                 elif not ll:
                     st.error("🚨 Jogadores comuns precisam informar o Código da Liga para entrar!")
                 elif verificar_login(nl, sl):
                     if verificar_liga_existente(ll):
-                        # Vincula dinamicamente o usuário à liga informada no login
                         vincular_usuario_a_liga(nl, ll)
                         st.session_state.usuario_logado = nl
                         st.session_state.liga_ativa = ll.strip().upper()
                         st.rerun()
                     else:
-                        st.error("🚨 Esse código de liga não existe! Verifique com o administrador do seu grupo.")
+                        st.error("🚨 Esse código de liga não existe! Verifique com o administrador.")
                 else: 
                     st.error("❌ Usuário ou senha incorretos!")
                     
-        # ABA CRIAR CONTA (CORRIGIDA: APENAS USUÁRIO E SENHA!)
+        # ABA CRIAR CONTA
         with aba_criar_conta:
             st.info("Crie seu acesso global. Você escolherá sua liga na hora de entrar!")
             nn = st.text_input("Escolha um Nome de Usuário:", key="create_user")
@@ -268,9 +282,9 @@ if st.session_state.usuario_logado is None:
             if st.button("Cadastrar Nova Conta"):
                 if nn and sn:
                     if criar_usuario(nn, sn): 
-                        st.success("🎉 Conta criada com sucesso! Mude para a aba '🔐 Entrar', informe seus dados e o código da sua liga.")
+                        st.success("🎉 Conta criada com sucesso! Vá para a aba '🔐 Entrar'.")
                     else: 
-                        st.error("🚨 Este nome de usuário já está sendo utilizado por outra pessoa. Tente outro!")
+                        st.error("🚨 Este nome de usuário já está sendo utilizado por outra pessoa.")
                 else: 
                     st.warning("Preencha todos os campos!")
                     
@@ -281,10 +295,14 @@ if st.session_state.usuario_logado is None:
             cod_liga = st.text_input("Código de Acesso Personalizado (Ex: FATEC2026):")
             if st.button("Registrar Nova Liga"):
                 if nome_liga and cod_liga:
-                    if criar_nova_liga(nome_liga, cod_liga):
-                        st.success(f"Liga '{nome_liga}' criada! Compartilhe o código '{cod_liga.upper()}' com seus amigos.")
+                    if verificar_liga_existente(cod_liga):
+                        st.error("🚨 Esse código de acesso já está em uso por outro grupo! Escolha outro.")
                     else:
-                        st.error("🚨 Esse código já está sendo usado ou ocorreu um erro de conexão. Tente outro código.")
+                        try:
+                            if criar_nova_liga(nome_liga, cod_liga):
+                                st.success(f"Liga '{nome_liga}' criada com sucesso! Compartilhe o código '{cod_liga.upper()}' com seus amigos.")
+                        except Exception as error_db:
+                            st.error(f"❌ Erro de conexão com o banco: {error_db}")
                 else:
                     st.warning("Preencha o nome e o código da liga!")
                     
@@ -454,28 +472,81 @@ else:
         </div>
         """, unsafe_allow_html=True)
 
-    # 6. ABA ADMIN GLOBAL
+    # 6. ABA ADMIN GLOBAL (COMPLETAMENTE EXPANDIDA COM CONTROLE TOTAL)
     with tab4:
         if user == "ADMIN":
             st.subheader("🔑 Painel Mestre Global")
+            
+            # --- MONITOR DE USUÁRIOS (VER LOGINS, SENHAS E EXCLUIR FAKES) ---
+            with st.expander("👥 Gerenciar Contas de Jogadores"):
+                df_usuarios = get_todos_usuarios_global()
+                if not df_usuarios.empty:
+                    st.write("Lista completa de jogadores no sistema:")
+                    for _, row_u in df_usuarios.iterrows():
+                        col_u1, col_u2, col_u3, col_u4 = st.columns([2, 2, 2, 1])
+                        with col_u1: st.write(f"👤 {row_u['nome']}")
+                        with col_u2: st.write(f"🔑 Senha: `{row_u['senha']}`")
+                        with col_u3: st.write(f"🏆 Liga: `{row_u['liga_codigo']}`")
+                        with col_u4:
+                            if st.button("Excluir", key=f"del_user_{row_u['nome']}"):
+                                deletar_usuario(row_u['nome'])
+                                st.success(f"{row_u['nome']} apagado!")
+                                st.rerun()
+                else:
+                    st.info("Nenhum usuário cadastrado.")
+
+            # --- MONITOR DE LIGAS (VER E EXCLUIR GRUPOS INATIVOS) ---
+            with st.expander("🏆 Gerenciar Ligas Ativas"):
+                df_ligas = get_todas_ligas()
+                if not df_ligas.empty:
+                    for _, row_l in df_ligas.iterrows():
+                        col_l1, col_l2, col_l3 = st.columns([3, 3, 1])
+                        with col_l1: st.write(f"🔹 {row_l['nome']}")
+                        with col_l2: st.write(f"Código: `{row_l['codigo']}`")
+                        with col_l3:
+                            if st.button("Apagar", key=f"del_liga_{row_l['codigo']}"):
+                                deletar_liga(row_l['codigo'])
+                                st.success("Liga excluída!")
+                                st.rerun()
+                else:
+                    st.info("Nenhuma liga criada ainda.")
+
+            st.markdown("---")
+            
+            # --- MONITOR DE JOGOS (EDITAR PLACAR E EXCLUIR PARTIDA) ---
+            st.write("📊 **Gerenciar Resultados dos Jogos:**")
             if not jogos.empty:
                 for _, jo in jogos.iterrows():
-                    c1, c2, c3, c4 = st.columns([2,1,1,2])
+                    c1, c2, c3, c4, c5 = st.columns([2,1,1,2,1])
                     with c1: st.write(f"{jo['time_a']} x {jo['time_b']}")
-                    ga = int(jo['gols_a']) if pd.notnull(jo['gols_a']) else 0; gb = int(jo['gols_b']) if pd.notnull(jo['gols_b']) else 0
+                    ga = int(jo['gols_a']) if pd.notnull(jo['gols_a']) else 0
+                    gb = int(jo['gols_b']) if pd.notnull(jo['gols_b']) else 0
                     na = c2.number_input("A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
                     nb = c3.number_input("B", value=gb, key=f"ad_b_{jo['id']}", label_visibility="collapsed")
-                    if c4.button("Salvar Placar", key=f"ad_btn_{jo['id']}"):
-                        atualizar_resultado_real(int(jo['id']), na, nb)
-                        st.cache_data.clear()
-                        st.success("Placar Salvo!")
-                        st.rerun()
+                    
+                    with c4:
+                        if st.button("Salvar Placar", key=f"ad_btn_{jo['id']}"):
+                            atualizar_resultado_real(int(jo['id']), na, nb)
+                            st.cache_data.clear()
+                            st.success("Salvo!")
+                            st.rerun()
+                    with c5:
+                        if st.button("❌", key=f"del_jogo_{jo['id']}", help="Excluir este jogo permanentemente"):
+                            deletar_jogo(jo['id'])
+                            st.cache_data.clear()
+                            st.rerun()
+                            
             st.markdown("---")
             st.subheader("➕ Novo Jogo")
             c1, c2, c3, c4 = st.columns(4)
-            t_a = c1.text_input("Time A"); t_b = c2.text_input("Time B"); fas = c3.selectbox("Fase", ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"]); dat = c4.text_input("Data", value="2026-06-01 16:00:00")
+            t_a = c1.text_input("Time A")
+            t_b = c2.text_input("Time B")
+            fas = c3.selectbox("Fase", ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"])
+            dat = c4.text_input("Data", value="2026-06-01 16:00:00")
             if st.button("Criar Jogo"):
-                adicionar_novo_jogo(t_a, t_b, dat, fas); st.cache_data.clear(); st.rerun()
+                adicionar_novo_jogo(t_a, t_b, dat, fas)
+                st.cache_data.clear()
+                st.rerun()
                 
             st.markdown("---")
             if st.checkbox("RESET TOTAL (ÁREA DE PERIGO)"):
