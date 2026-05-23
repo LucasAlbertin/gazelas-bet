@@ -83,7 +83,7 @@ ADMIN_USER = "Admin"
 ADMIN_PASS = "gazelas123" 
 
 # =========================================================
-# FUNÇÕES DE BANCO DE DADOS (COM SUPORTE A LIGAS)
+# FUNÇÕES DE BANCO DE DADOS
 # =========================================================
 
 @st.cache_data(ttl=600)
@@ -187,8 +187,8 @@ def calcular_tabela_copa():
         for time in times:
             tabela[time] = {'Grupo': grupo, 'Time': time, 'Pts': 0, 'J': 0, 'V': 0, 'E': 0, 'D': 0, 'GP': 0, 'GC': 0, 'SG': 0}
     if not jogos_realizados.empty:
-        for _, jogo in jogos_realizados.iterrows():
-            ta, tb = jogo['time_a'], jogo['time_b']; ga, gb = int(jogo['gols_a']), int(jogo['gols_b'])
+        for _, j in jogos_realizados.iterrows():
+            ta, tb = j['time_a'], j['time_b']; ga, gb = int(j['gols_a']), int(j['gols_b'])
             if ta in tabela:
                 tabela[ta]['J'] += 1; tabela[ta]['GP'] += ga; tabela[ta]['GC'] += gb; tabela[ta]['SG'] += (ga - gb)
                 if ga > gb: tabela[ta]['Pts'] += 3; tabela[ta]['V'] += 1
@@ -213,26 +213,28 @@ if st.session_state.usuario_logado is None:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         aba_login, aba_criar_conta, aba_criar_liga = st.tabs(["🔐 Entrar", "🆕 Criar Conta", "🏆 Criar Liga"])
         
-        # ABA ENTRAR (MUDADA CONFORME SEU PEDIDO)
+        # ABA ENTRAR (CORRIGIDA: LIGA OPCIONAL PARA O ADMIN)
         with aba_login:
             nl = st.text_input("Usuário:", key="login_user")
             sl = st.text_input("Senha:", type="password", key="login_pass")
-            ll = st.text_input("Código da Liga:", help="Ex: FATEC2026", key="login_liga")
+            ll = st.text_input("Código da Liga:", help="Jogadores normais devem preencher. Deixe em branco se for o Admin.", key="login_liga")
             if st.button("Entrar no Sistema", type="primary"):
+                # Validação direta do Admin (Não pede liga)
                 if nl == ADMIN_USER and sl == ADMIN_PASS:
                     st.session_state.usuario_logado = "ADMIN"
-                    st.st.session_state.liga_ativa = "GLOBAL"
+                    st.session_state.liga_ativa = "GLOBAL"
                     st.rerun()
+                # Validação para jogadores comuns (Liga obrigatória)
                 elif not ll:
-                    st.error("Por favor, informe o código da liga.")
+                    st.error("🚨 Jogadores comuns precisam informar o Código da Liga para entrar!")
                 elif verificar_login(nl, sl, ll):
                     st.session_state.usuario_logado = nl
                     st.session_state.liga_ativa = ll.strip().upper()
                     st.rerun()
                 else: 
-                    st.error("Usuário, senha ou liga incorretos!")
+                    st.error("❌ Usuário, senha ou código de liga incorretos!")
                     
-        # ABA CRIAR CONTA (MANTIDA ORIGINAL)
+        # ABA CRIAR CONTA
         with aba_criar_conta:
             nn = st.text_input("Novo Usuário:", key="create_user")
             sn = st.text_input("Nova Senha:", type="password", key="create_pass")
@@ -249,7 +251,7 @@ if st.session_state.usuario_logado is None:
                 else: 
                     st.warning("Preencha todos os campos!")
                     
-        # ABA CRIAR LIGA (NOME E CÓDIGO)
+        # ABA CRIAR LIGA
         with aba_criar_liga:
             st.info("Crie um grupo exclusivo para seus amigos.")
             nome_liga = st.text_input("Nome da Liga (Ex: Amigos da FATEC):")
@@ -292,7 +294,7 @@ else:
 
     tab1, tab2, tab3, tab_copa, tab_regras, tab4 = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras", "⚙️ Admin"])
 
-    # 1. ABA PALPITES (FILTRADO POR LIGA)
+    # 1. ABA PALPITES
     with tab1:
         if user == "ADMIN": st.warning("Admin Mestre global não realiza palpites.")
         else:
@@ -330,10 +332,10 @@ else:
                                     st.toast("Palpite Salvo!"); st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. ABA RANKING COMPACTA (ISOLADA POR LIGA)
+    # 2. ABA RANKING COMPACTA
     with tab2:
         st.subheader("🏆 Classificação Interna")
-        if user == "ADMIN": st.info("Admin visualiza as ligas pelo painel do Supabase.")
+        if user == "ADMIN": st.info("O Admin gerencia as ligas e dados de forma global.")
         elif not ranking.empty:
             df_visual = ranking.copy()
             df_visual.insert(0, 'Posição', range(1, len(df_visual) + 1))
@@ -367,9 +369,9 @@ else:
         else:
             st.info("Nenhum participante pontuou nesta liga ainda.")
 
-    # 3. ABA ESPIAR (SÓ VE_ QUEM É DA MESMA LIGA)
+    # 3. ABA ESPIAR
     with tab3:
-        if user == "ADMIN": st.warning("Aba restrita a contas de jogadores.")
+        if user == "ADMIN": st.warning("Aba restrita a contas de jogadores comuns.")
         elif not jogos.empty:
             fuso_br = pytz.timezone('America/Sao_Paulo'); agora_br = datetime.now(fuso_br).replace(tzinfo=None)
             for dia in jogos['data_apenas'].unique():
@@ -403,7 +405,7 @@ else:
                 st.markdown(f"### {grupo}")
                 st.dataframe(df_copa[df_copa['Grupo']==grupo].sort_values(by=['Pts','SG','GP'], ascending=False).drop(columns=['Grupo']), use_container_width=True, hide_index=True)
 
-    # 5. ABA REGRAS (ATUALIZADA COM OS TEMPOS DE JOGO REGULAMENTARES)
+    # 5. ABA REGRAS
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
         st.markdown("""
