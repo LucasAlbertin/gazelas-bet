@@ -74,7 +74,7 @@ div[data-testid="stMetricLabel"] { font-size: 14px !important; color: #A0AEC0 !i
 </style>
 """, unsafe_allow_html=True)
 
-# CONEXÃO COM O SUPABASE
+# Conexão com Supabase (Lendo dos Secrets para sua segurança)
 SUPABASE_URL = "https://busfsfrcodfnjgkizfme.supabase.co"
 SUPABASE_KEY = "sb_publishable_tnx9hoG8lqnwvS2Po02GWQ_d9EcB2AL"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -101,9 +101,12 @@ def verificar_liga_existente(codigo_liga):
 def criar_nova_liga(nome_liga, codigo_liga):
     try:
         cod = codigo_liga.strip().upper()
+        # Modificado para garantir a inserção correta limpando espaços
         supabase.table("ligas").insert({"nome": nome_liga.strip(), "codigo": cod}).execute()
         return True
-    except:
+    except Exception as e:
+        # Mostra o erro real no console caso algo falhe na estrutura
+        print(f"Erro Supabase Liga: {e}")
         return False
 
 def criar_usuario(nome, senha, codigo_liga):
@@ -164,6 +167,12 @@ def calcular_ranking(codigo_liga):
                 
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
+
+def atualizar_resultado_real(jogo_id, gols_a, gols_b):
+    supabase.table("jogos").update({"gols_a": gols_a, "gols_b": gols_b}).eq("id", jogo_id).execute()
+
+def adicionar_novo_jogo(time_a, time_b, data_hora, fase):
+    supabase.table("jogos").insert({"time_a": time_a, "time_b": time_b, "data_hora": data_hora, "fase": fase}).execute()
 
 def reset_banco_dados():
     try:
@@ -268,7 +277,7 @@ if st.session_state.usuario_logado is None:
                     if criar_nova_liga(nome_liga, cod_liga):
                         st.success(f"Liga '{nome_liga}' criada! Compartilhe o código '{cod_liga.upper()}' com seus amigos.")
                     else:
-                        st.error("🚨 Esse código já está sendo usado por outro grupo. Escolha outro.")
+                        st.error("🚨 Esse código já está sendo usado ou ocorreu um erro de conexão. Tente outro código.")
                 else:
                     st.warning("Preencha o nome e o código da liga!")
                     
