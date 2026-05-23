@@ -101,27 +101,30 @@ def verificar_liga_existente(codigo_liga):
 def criar_nova_liga(nome_liga, codigo_liga):
     try:
         cod = codigo_liga.strip().upper()
-        # Modificado para garantir a inserção correta limpando espaços
         supabase.table("ligas").insert({"nome": nome_liga.strip(), "codigo": cod}).execute()
         return True
     except Exception as e:
-        # Mostra o erro real no console caso algo falhe na estrutura
         print(f"Erro Supabase Liga: {e}")
         return False
 
-def criar_usuario(nome, senha, codigo_liga):
+def criar_usuario(nome, senha):
+    try:
+        # Criamos o usuário globalmente (sem amarrar a uma única liga na criação)
+        supabase.table("usuarios").insert({"nome": nome.strip(), "senha": senha}).execute()
+        return True
+    except:
+        return False
+
+def vincular_usuario_a_liga(nome, codigo_liga):
     try:
         cod = codigo_liga.strip().upper()
-        if not verificar_liga_existente(cod):
-            return "liga_nao_existe"
-        supabase.table("usuarios").insert({"nome": nome.strip(), "senha": senha, "liga_codigo": cod}).execute()
-        return "sucesso"
+        supabase.table("usuarios").update({"liga_codigo": cod}).eq("nome", nome.strip()).execute()
+        return True
     except:
-        return "erro"
+        return False
 
-def verificar_login(nome, senha, codigo_liga):
-    cod = codigo_liga.strip().upper()
-    res = supabase.table("usuarios").select("*").eq("nome", nome.strip()).eq("senha", senha).eq("liga_codigo", cod).execute()
+def verificar_login(nome, senha):
+    res = supabase.table("usuarios").select("*").eq("nome", nome.strip()).eq("senha", senha).execute()
     return len(res.data) > 0
 
 def salvar_palpite(usuario, jogo_id, p_a, p_b, codigo_liga):
@@ -231,39 +234,43 @@ if st.session_state.usuario_logado is None:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         aba_login, aba_criar_conta, aba_criar_liga = st.tabs(["🔐 Entrar", "🆕 Criar Conta", "🏆 Criar Liga"])
         
-        # ABA ENTRAR
+        # ABA ENTRAR (Pede usuário, senha e código da liga)
         with aba_login:
             nl = st.text_input("Usuário:", key="login_user")
             sl = st.text_input("Senha:", type="password", key="login_pass")
             ll = st.text_input("Código da Liga:", help="Deixe em branco apenas se for o Admin.", key="login_liga")
             if st.button("Entrar no Sistema", type="primary"):
+                # Validação do Admin
                 if nl == ADMIN_USER and sl == ADMIN_PASS:
                     st.session_state.usuario_logado = "ADMIN"
                     st.session_state.liga_ativa = "GLOBAL"
                     st.rerun()
+                # Validação para jogadores normais
                 elif not ll:
                     st.error("🚨 Jogadores comuns precisam informar o Código da Liga para entrar!")
-                elif verificar_login(nl, sl, ll):
-                    st.session_state.usuario_logado = nl
-                    st.session_state.liga_ativa = ll.strip().upper()
-                    st.rerun()
+                elif verificar_login(nl, sl):
+                    if verificar_liga_existente(ll):
+                        # Vincula dinamicamente o usuário à liga informada no login
+                        vincular_usuario_a_liga(nl, ll)
+                        st.session_state.usuario_logado = nl
+                        st.session_state.liga_ativa = ll.strip().upper()
+                        st.rerun()
+                    else:
+                        st.error("🚨 Esse código de liga não existe! Verifique com o administrador do seu grupo.")
                 else: 
-                    st.error("❌ Usuário, senha ou código de liga incorretos!")
+                    st.error("❌ Usuário ou senha incorretos!")
                     
-        # ABA CRIAR CONTA
+        # ABA CRIAR CONTA (CORRIGIDA: APENAS USUÁRIO E SENHA!)
         with aba_criar_conta:
-            nn = st.text_input("Novo Usuário:", key="create_user")
-            sn = st.text_input("Nova Senha:", type="password", key="create_pass")
-            nl_code = st.text_input("Código da Liga para Entrar:", key="create_liga_code")
-            if st.button("Cadastrar"):
-                if nn and sn and nl_code:
-                    status = criar_usuario(nn, sn, nl_code)
-                    if status == "sucesso": 
-                        st.success("Conta criada com sucesso! Faça o login na aba 'Entrar'.")
-                    elif status == "liga_nao_existe": 
-                        st.error("🚨 Esse código de liga não existe! Crie a liga primeiro.")
+            st.info("Crie seu acesso global. Você escolherá sua liga na hora de entrar!")
+            nn = st.text_input("Escolha um Nome de Usuário:", key="create_user")
+            sn = st.text_input("Escolha uma Senha:", type="password", key="create_pass")
+            if st.button("Cadastrar Nova Conta"):
+                if nn and sn:
+                    if criar_usuario(nn, sn): 
+                        st.success("🎉 Conta criada com sucesso! Mude para a aba '🔐 Entrar', informe seus dados e o código da sua liga.")
                     else: 
-                        st.error("🚨 Nome de usuário já ocupado nesta liga.")
+                        st.error("🚨 Este nome de usuário já está sendo utilizado por outra pessoa. Tente outro!")
                 else: 
                     st.warning("Preencha todos os campos!")
                     
