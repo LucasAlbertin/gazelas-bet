@@ -74,7 +74,7 @@ div[data-testid="stMetricLabel"] { font-size: 14px !important; color: #A0AEC0 !i
 </style>
 """, unsafe_allow_html=True)
 
-# Conexão com Supabase (Lendo dos Secrets para sua segurança)
+# CONEXÃO COM O SUPABASE
 SUPABASE_URL = "https://busfsfrcodfnjgkizfme.supabase.co"
 SUPABASE_KEY = "sb_publishable_tnx9hoG8lqnwvS2Po02GWQ_d9EcB2AL"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -165,6 +165,15 @@ def calcular_ranking(codigo_liga):
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
 
+def reset_banco_dados():
+    try:
+        supabase.table("palpites").delete().neq("usuario", "").execute()
+        supabase.table("usuarios").delete().neq("nome", "").execute()
+        supabase.table("ligas").delete().neq("nome", "").execute()
+        supabase.table("jogos").update({"gols_a": None, "gols_b": None}).neq("time_a", "").execute()
+    except Exception as e:
+        st.error(f"Erro ao resetar banco: {e}")
+
 def calcular_tabela_copa():
     grupos = {
         'Grupo A': ['🇲🇽 México', '🇿🇦 África do Sul', '🇰🇷 Coreia do Sul', '🇨🇿 República Tcheca'],
@@ -213,18 +222,16 @@ if st.session_state.usuario_logado is None:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         aba_login, aba_criar_conta, aba_criar_liga = st.tabs(["🔐 Entrar", "🆕 Criar Conta", "🏆 Criar Liga"])
         
-        # ABA ENTRAR (CORRIGIDA: LIGA OPCIONAL PARA O ADMIN)
+        # ABA ENTRAR
         with aba_login:
             nl = st.text_input("Usuário:", key="login_user")
             sl = st.text_input("Senha:", type="password", key="login_pass")
-            ll = st.text_input("Código da Liga:", help="Jogadores normais devem preencher. Deixe em branco se for o Admin.", key="login_liga")
+            ll = st.text_input("Código da Liga:", help="Deixe em branco apenas se for o Admin.", key="login_liga")
             if st.button("Entrar no Sistema", type="primary"):
-                # Validação direta do Admin (Não pede liga)
                 if nl == ADMIN_USER and sl == ADMIN_PASS:
                     st.session_state.usuario_logado = "ADMIN"
                     st.session_state.liga_ativa = "GLOBAL"
                     st.rerun()
-                # Validação para jogadores comuns (Liga obrigatória)
                 elif not ll:
                     st.error("🚨 Jogadores comuns precisam informar o Código da Liga para entrar!")
                 elif verificar_login(nl, sl, ll):
@@ -453,8 +460,14 @@ else:
             t_a = c1.text_input("Time A"); t_b = c2.text_input("Time B"); fas = c3.selectbox("Fase", ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"]); dat = c4.text_input("Data", value="2026-06-01 16:00:00")
             if st.button("Criar Jogo"):
                 adicionar_novo_jogo(t_a, t_b, dat, fas); st.cache_data.clear(); st.rerun()
+                
+            st.markdown("---")
             if st.checkbox("RESET TOTAL (ÁREA DE PERIGO)"):
-                if st.button("LIMPAR TUDO"): reset_banco_dados(); st.cache_data.clear(); st.rerun()
+                if st.button("LIMPAR TUDO"): 
+                    reset_banco_dados()
+                    st.cache_data.clear()
+                    st.success("Banco de dados limpo com sucesso!")
+                    st.rerun()
         else: 
             st.error("Acesso restrito ao administrador global do bolão.")
 
