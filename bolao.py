@@ -337,11 +337,28 @@ else:
         st.subheader("📜 Regulamento do Bolão")
         st.markdown("""
         <div class='card'><h4 style='color:#00E676 !important;'>🎯 Pontuação</h4>
-        <ul><li><b>3 Pontos:</b> Placar exato.</li><li><b>1 Ponto:</b> Acertou vencedor ou empate.</li><li><b>0 Pontos:</b> Erro total.</li></ul></div>
+        <ul>
+            <li><b>3 Pontos:</b> Placar exato.</li>
+            <li><b>1 Ponto:</b> Acertou vencedor ou empate.</li>
+            <li><b>0 Pontos:</b> Erro total.</li>
+        </ul>
+        </div>
+        
+        <div class='card'><h4 style='color:#00E676 !important;'>⏱️ Tempo de Jogo Regulamentar</h4>
+        <p>A pontuação será contabilizada após o término oficial da partida:</p>
+        <ul>
+            <li><b>90 minutos</b> na fase de grupos.</li>
+            <li><b>120 minutos</b> nas fases eliminatórias (inclui a prorrogação, mas <b>NÃO</b> conta a disputa por pênaltis).</li>
+        </ul>
+        </div>
+        
         <div class='card'><h4 style='color:#00E676 !important;'>🔒 Travamento</h4>
-        <p>O cadeado fecha automaticamente no horário de início de cada jogo (Horário de Brasília).</p></div>
+        <p>O cadeado fecha automaticamente no horário de início de cada jogo (Horário de Brasília).</p>
+        </div>
+        
         <div class='card'><h4 style='color:#00E676 !important;'>👀 Espiar</h4>
-        <p>Os palpites dos adversários só ficam visíveis após o início da partida para garantir a transparência.</p></div>
+        <p>Os palpites dos adversários só ficam visíveis após o início da partida para garantir a transparência.</p>
+        </div>
         """, unsafe_allow_html=True)
 
     # 6. ABA ADMIN
