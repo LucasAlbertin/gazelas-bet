@@ -80,7 +80,11 @@ ADMIN_PASS = "gazelas123"
 @st.cache_data(ttl=600)
 def get_jogos():
     res = supabase.table("jogos").select("*").order("data_hora").execute()
-    return pd.DataFrame(res.data)
+    df = pd.DataFrame(res.data)
+    if not df.empty:
+        # Já deixa a coluna criada direto na origem para todas as abas usarem
+        df['data_apenas'] = pd.to_datetime(df['data_hora'].str.replace('T', ' ')).dt.strftime('%d/%m/%Y')
+    return df
 
 def salvar_palpite(usuario, jogo_id, p_a, p_b):
     data = {"usuario": usuario, "jogo_id": jogo_id, "palpite_a": p_a, "palpite_b": p_b}
@@ -225,7 +229,6 @@ else:
             st.subheader("Meus Palpites")
             if not jogos.empty:
                 p_u = get_palpites_usuario(user)
-                jogos['data_apenas'] = pd.to_datetime(jogos['data_hora'].str.replace('T', ' ')).dt.strftime('%d/%m/%Y')
                 for dia in jogos['data_apenas'].unique():
                     with st.expander(f"📅 Jogos do dia {dia}"):
                         for _, j in jogos[jogos['data_apenas'] == dia].iterrows():
