@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Injeção de CSS Moderno (Design Premium + Ajuste de Métricas + Rodapé)
+# Injeção de CSS Moderno
 st.markdown("""
 <style>
 .stApp {
@@ -32,6 +32,15 @@ p, span, label { color: #E2E8F0 !important; }
     border: 1px solid rgba(255,255,255,0.05);
     margin-bottom: 15px;
     box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+}
+
+/* Ranking e Tabelas */
+.rank-card {
+    background: #151C32;
+    padding: 18px;
+    border-radius: 16px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255,255,255,0.05);
 }
 
 /* Botões Modernos */
@@ -65,7 +74,7 @@ div[data-testid="stMetricLabel"] { font-size: 14px !important; color: #A0AEC0 !i
 </style>
 """, unsafe_allow_html=True)
 
-# Conexão com Supabase 
+# Conexão com Supabase (Lendo dos Secrets para sua segurança)
 SUPABASE_URL = "https://busfsfrcodfnjgkizfme.supabase.co"
 SUPABASE_KEY = "sb_publishable_tnx9hoG8lqnwvS2Po02GWQ_d9EcB2AL"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -74,7 +83,7 @@ ADMIN_USER = "Admin"
 ADMIN_PASS = "gazelas123" 
 
 # =========================================================
-# FUNÇÕES DE BANCO DE DADOS
+# FUNÇÕES DE BANCO DE DADOS (COM SUPORTE A LIGAS)
 # =========================================================
 
 @st.cache_data(ttl=600)
@@ -82,65 +91,77 @@ def get_jogos():
     res = supabase.table("jogos").select("*").order("data_hora").execute()
     df = pd.DataFrame(res.data)
     if not df.empty:
-        # Já deixa a coluna criada direto na origem para todas as abas usarem
         df['data_apenas'] = pd.to_datetime(df['data_hora'].str.replace('T', ' ')).dt.strftime('%d/%m/%Y')
     return df
 
-def salvar_palpite(usuario, jogo_id, p_a, p_b):
-    data = {"usuario": usuario, "jogo_id": jogo_id, "palpite_a": p_a, "palpite_b": p_b}
-    supabase.table("palpites").upsert(data).execute()
-
-def criar_usuario(nome, senha):
-    try:
-        supabase.table("usuarios").insert({"nome": nome, "senha": senha}).execute()
-        return True
-    except: return False
-
-def verificar_login(nome, senha):
-    res = supabase.table("usuarios").select("*").eq("nome", nome).eq("senha", senha).execute()
+def verificar_liga_existente(codigo_liga):
+    res = supabase.table("ligas").select("*").eq("codigo", codigo_liga.strip().upper()).execute()
     return len(res.data) > 0
 
-def get_todos_usuarios():
-    res = supabase.table("usuarios").select("nome, senha").execute()
+def criar_nova_liga(nome_liga, codigo_liga):
+    try:
+        cod = codigo_liga.strip().upper()
+        supabase.table("ligas").insert({"nome": nome_liga.strip(), "codigo": cod}).execute()
+        return True
+    except:
+        return False
+
+def criar_usuario(nome, senha, codigo_liga):
+    try:
+        cod = codigo_liga.strip().upper()
+        if not verificar_liga_existente(cod):
+            return "liga_nao_existe"
+        supabase.table("usuarios").insert({"nome": nome.strip(), "senha": senha, "liga_codigo": cod}).execute()
+        return "sucesso"
+    except:
+        return "erro"
+
+def verificar_login(nome, senha, codigo_liga):
+    cod = codigo_liga.strip().upper()
+    res = supabase.table("usuarios").select("*").eq("nome", nome.strip()).eq("senha", senha).eq("liga_codigo", cod).execute()
+    return len(res.data) > 0
+
+def salvar_palpite(usuario, jogo_id, p_a, p_b, codigo_liga):
+    cod = codigo_liga.strip().upper()
+    data = {"usuario": usuario, "jogo_id": jogo_id, "palpite_a": p_a, "palpite_b": p_b, "liga_codigo": cod}
+    supabase.table("palpites").upsert(data).execute()
+
+def get_palpites_usuario(usuario, codigo_liga):
+    cod = codigo_liga.strip().upper()
+    res = supabase.table("palpites").select("*").eq("usuario", usuario).eq("liga_codigo", cod).execute()
+    if not res.data: 
+        return pd.DataFrame(columns=['usuario', 'jogo_id', 'palpite_a', 'palpite_b', 'liga_codigo'])
     return pd.DataFrame(res.data)
 
-def atualizar_resultado_real(j_id, g_a, g_b):
-    supabase.table("jogos").update({"gols_a": g_a, "gols_b": g_b}).eq("id", j_id).execute()
-
-def adicionar_novo_jogo(time_a, time_b, data_hora, fase):
-    data = {"time_a": time_a, "time_b": time_b, "data_hora": data_hora, "fase": fase}
-    supabase.table("jogos").insert(data).execute()
-
-def reset_banco_dados():
-    supabase.table("palpites").delete().neq("usuario", "").execute()
-    supabase.table("usuarios").delete().neq("nome", "").execute()
-    supabase.table("jogos").update({"gols_a": None, "gols_b": None}).neq("time_a", "").execute()
-
-def get_palpites_usuario(usuario):
-    res = supabase.table("palpites").select("*").eq("usuario", usuario).execute()
-    if not res.data: return pd.DataFrame(columns=['usuario', 'jogo_id', 'palpite_a', 'palpite_b'])
-    return pd.DataFrame(res.data)
-
-def get_todos_palpites_do_jogo(jogo_id):
-    res = supabase.table("palpites").select("usuario, palpite_a, palpite_b").eq("jogo_id", jogo_id).execute()
-    if not res.data: return pd.DataFrame(columns=['Participante', 'Gols A', 'Gols B'])
+def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
+    cod = codigo_liga.strip().upper()
+    res = supabase.table("palpites").select("usuario, palpite_a, palpite_b").eq("jogo_id", jogo_id).eq("liga_codigo", cod).execute()
+    if not res.data: 
+        return pd.DataFrame(columns=['Participante', 'Gols A', 'Gols B'])
     df = pd.DataFrame(res.data)
     df.rename(columns={'usuario': 'Participante', 'palpite_a': 'Gols A', 'palpite_b': 'Gols B'}, inplace=True)
     return df
 
-def calcular_ranking():
-    usuarios_res = supabase.table("usuarios").select("nome").execute()
+def calcular_ranking(codigo_liga):
+    cod = codigo_liga.strip().upper()
+    usuarios_res = supabase.table("usuarios").select("nome").eq("liga_codigo", cod).execute()
     jogos_res = supabase.table("jogos").select("*").not_.is_("gols_a", "null").execute()
-    palpites_res = supabase.table("palpites").select("*").execute()
+    palpites_res = supabase.table("palpites").select("*").eq("liga_codigo", cod).execute()
+    
     pontos = {u['nome']: 0 for u in usuarios_res.data}
     jogos_dict = {j['id']: j for j in jogos_res.data}
+    
     for p in palpites_res.data:
         if p['jogo_id'] in jogos_dict:
-            j = jogos_dict[p['jogo_id']]; pa, pb = int(p['palpite_a']), int(p['palpite_b']); ra, rb = int(j['gols_a']), int(j['gols_b'])
+            j = jogos_dict[p['jogo_id']]
+            pa, pb = int(p['palpite_a']), int(p['palpite_b'])
+            ra, rb = int(j['gols_a']), int(j['gols_b'])
             pts = 0
             if pa == ra and pb == rb: pts = 3
             elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb): pts = 1
-            if p['usuario'] in pontos: pontos[p['usuario']] += pts
+            if p['usuario'] in pontos: 
+                pontos[p['usuario']] += pts
+                
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
 
@@ -181,54 +202,103 @@ def calcular_tabela_copa():
     return pd.DataFrame(list(tabela.values()))
 
 # =========================================================
-# APP UI
+# INTERFACE DE LOGIN / CADASTRO COM LIGAS
 # =========================================================
-st.markdown("<div style='text-align:center;'><h1>⚽ GAZELAS BET</h1></div>", unsafe_allow_html=True)
-
 if 'usuario_logado' not in st.session_state: st.session_state.usuario_logado = None
+if 'liga_ativa' not in st.session_state: st.session_state.liga_ativa = None
 
 if st.session_state.usuario_logado is None:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        aba_login, aba_criar = st.tabs(["🔐 Entrar", "🆕 Criar Conta"])
+        aba_login, aba_criar_conta, aba_criar_liga = st.tabs(["🔐 Entrar", "🆕 Criar Conta", "🏆 Criar Liga"])
+        
+        # ABA ENTRAR (MUDADA CONFORME SEU PEDIDO)
         with aba_login:
-            nl = st.text_input("Nome:")
-            sl = st.text_input("Senha:", type="password")
-            if st.button("Entrar", type="primary"):
-                if nl == ADMIN_USER and sl == ADMIN_PASS: st.session_state.usuario_logado = "ADMIN"; st.rerun()
-                elif verificar_login(nl, sl): st.session_state.usuario_logado = nl; st.rerun()
-                else: st.error("Acesso negado!")
-        with aba_criar:
-            nn = st.text_input("Novo Nome:"); sn = st.text_input("Nova Senha:", type="password")
+            nl = st.text_input("Usuário:", key="login_user")
+            sl = st.text_input("Senha:", type="password", key="login_pass")
+            ll = st.text_input("Código da Liga:", help="Ex: FATEC2026", key="login_liga")
+            if st.button("Entrar no Sistema", type="primary"):
+                if nl == ADMIN_USER and sl == ADMIN_PASS:
+                    st.session_state.usuario_logado = "ADMIN"
+                    st.st.session_state.liga_ativa = "GLOBAL"
+                    st.rerun()
+                elif not ll:
+                    st.error("Por favor, informe o código da liga.")
+                elif verificar_login(nl, sl, ll):
+                    st.session_state.usuario_logado = nl
+                    st.session_state.liga_ativa = ll.strip().upper()
+                    st.rerun()
+                else: 
+                    st.error("Usuário, senha ou liga incorretos!")
+                    
+        # ABA CRIAR CONTA (MANTIDA ORIGINAL)
+        with aba_criar_conta:
+            nn = st.text_input("Novo Usuário:", key="create_user")
+            sn = st.text_input("Nova Senha:", type="password", key="create_pass")
+            nl_code = st.text_input("Código da Liga para Entrar:", key="create_liga_code")
             if st.button("Cadastrar"):
-                if nn and sn and criar_usuario(nn, sn): st.success("Conta criada! Entre agora."); st.rerun()
-                else: st.error("Erro ao cadastrar!")
+                if nn and sn and nl_code:
+                    status = criar_usuario(nn, sn, nl_code)
+                    if status == "sucesso": 
+                        st.success("Conta criada com sucesso! Faça o login na aba 'Entrar'.")
+                    elif status == "liga_nao_existe": 
+                        st.error("🚨 Esse código de liga não existe! Crie a liga primeiro.")
+                    else: 
+                        st.error("🚨 Nome de usuário já ocupado nesta liga.")
+                else: 
+                    st.warning("Preencha todos os campos!")
+                    
+        # ABA CRIAR LIGA (NOME E CÓDIGO)
+        with aba_criar_liga:
+            st.info("Crie um grupo exclusivo para seus amigos.")
+            nome_liga = st.text_input("Nome da Liga (Ex: Amigos da FATEC):")
+            cod_liga = st.text_input("Código de Acesso Personalizado (Ex: FATEC2026):")
+            if st.button("Registrar Nova Liga"):
+                if nome_liga and cod_liga:
+                    if criar_nova_liga(nome_liga, cod_liga):
+                        st.success(f"Liga '{nome_liga}' criada! Compartilhe o código '{cod_liga.upper()}' com seus amigos.")
+                    else:
+                        st.error("🚨 Esse código já está sendo usado por outro grupo. Escolha outro.")
+                else:
+                    st.warning("Preencha o nome e o código da liga!")
+                    
         st.markdown("</div>", unsafe_allow_html=True)
+
+# =========================================================
+# APP LOGADO (ISOLADO POR LIGA)
+# =========================================================
 else:
     user = st.session_state.usuario_logado
+    liga = st.session_state.liga_ativa
     jogos = get_jogos()
-    ranking = calcular_ranking()
+    ranking = calcular_ranking(liga) if user != "ADMIN" else pd.DataFrame()
     
     col_n, col_s = st.columns([5, 1])
-    with col_n: st.write(f"👋 Bem-vindo, **{user}**!")
+    with col_n: 
+        if user == "ADMIN": st.error("Logado como **ADMINISTRADOR MESTRE GLOBAL**.")
+        else: st.write(f"👋 Jogador: **{user}** | 🏆 Liga: **{liga}**")
     with col_s: 
-        if st.button("Sair"): st.session_state.usuario_logado = None; st.rerun()
+        if st.button("Sair"): 
+            st.session_state.usuario_logado = None
+            st.session_state.liga_ativa = None
+            st.rerun()
 
+    # Painel de métricas compactas
     c1, c2, c3 = st.columns(3)
-    c1.metric("👥 Jogadores", len(ranking))
-    c2.metric("⚽ Jogos", len(jogos))
-    c3.metric("🏆 Líder", ranking.iloc[0]['Participante'] if not ranking.empty else "-")
+    c1.metric("👥 Jogadores na Liga", len(ranking) if user != "ADMIN" else "Mestre")
+    c2.metric("⚽ Total de Jogos", len(jogos))
+    c3.metric("🏆 Líder da Liga", ranking.iloc[0]['Participante'] if not ranking.empty else "-")
 
     tab1, tab2, tab3, tab_copa, tab_regras, tab4 = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras", "⚙️ Admin"])
 
-    # 1. ABA PALPITES
+    # 1. ABA PALPITES (FILTRADO POR LIGA)
     with tab1:
-        if user == "ADMIN": st.warning("Admin não palpita!")
+        if user == "ADMIN": st.warning("Admin Mestre global não realiza palpites.")
         else:
             st.subheader("Meus Palpites")
             if not jogos.empty:
-                p_u = get_palpites_usuario(user)
+                p_u = get_palpites_usuario(user, liga)
                 for dia in jogos['data_apenas'].unique():
                     with st.expander(f"📅 Jogos do dia {dia}"):
                         for _, j in jogos[jogos['data_apenas'] == dia].iterrows():
@@ -237,11 +307,14 @@ else:
                             dt_str = j['data_hora'].replace('T', ' '); h_j = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
                             fuso_br = pytz.timezone('America/Sao_Paulo'); agora_br = datetime.now(fuso_br).replace(tzinfo=None)
                             travado = agora_br >= h_j
+                            
                             p_at = p_u[p_u['jogo_id'] == j['id']]; ja_palpitou = not p_at.empty
                             v_a = int(p_at.iloc[0]['palpite_a']) if ja_palpitou else 0; v_b = int(p_at.iloc[0]['palpite_b']) if ja_palpitou else 0
+                            
                             c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
                             with c1: st.write(f"**{j['time_a']}**")
                             with c5: st.write(f"**{j['time_b']}**")
+                            
                             if travado:
                                 with c2: st.warning(f"{v_a}" if ja_palpitou else "-", icon="🔒")
                                 with c3: st.write("X")
@@ -251,22 +324,20 @@ else:
                                 with c2: pa_a = st.number_input(f"A_{j['id']}", min_value=0, value=v_a, label_visibility="collapsed")
                                 with c3: st.write("X")
                                 with c4: pa_b = st.number_input(f"B_{j['id']}", min_value=0, value=v_b, label_visibility="collapsed")
-                                if not ja_palpitou: st.warning("⚠️ Você ainda não palpitou!")
+                                if not ja_palpitou: st.warning("⚠️ Você ainda não palpitou neste jogo!")
                                 if st.button(f"Salvar {j['time_a']} x {j['time_b']}", key=f"btn_{j['id']}"):
-                                    salvar_palpite(user, int(j['id']), pa_a, pa_b); st.toast("Salvo!"); st.rerun()
+                                    salvar_palpite(user, int(j['id']), pa_a, pa_b, liga)
+                                    st.toast("Palpite Salvo!"); st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. ABA RANKING COMPACTA (DATAFRAME)
+    # 2. ABA RANKING COMPACTA (ISOLADA POR LIGA)
     with tab2:
-        st.subheader("🏆 Classificação do Grupo")
-        if not ranking.empty:
-            # Criamos uma cópia do DataFrame para formatar visualmente
+        st.subheader("🏆 Classificação Interna")
+        if user == "ADMIN": st.info("Admin visualiza as ligas pelo painel do Supabase.")
+        elif not ranking.empty:
             df_visual = ranking.copy()
-            
-            # Adiciona a coluna de Posição começando em 1
             df_visual.insert(0, 'Posição', range(1, len(df_visual) + 1))
             
-            # Função para emojificar as primeiras colocações
             def emojificar_posicao(pos):
                 if pos == 1: return "🥇 1º"
                 elif pos == 2: return "🥈 2º"
@@ -275,7 +346,6 @@ else:
             
             df_visual['Posição'] = df_visual['Posição'].apply(emojificar_posicao)
             
-            # Exibe a tabela compacta com barra de rolagem inteligente se passar de 30 pessoas
             st.dataframe(
                 df_visual,
                 use_container_width=True,
@@ -288,21 +358,19 @@ else:
             )
             
             st.markdown("---")
-            st.write("📋 **Mural para o WhatsApp:** Clique no ícone de cópia no canto superior direito do bloco cinza abaixo!")
-            
-            texto_copia = "🏆 GAZELAS BET - RANKING ATUALIZADO 🏆\n\n"
+            texto_copia = f"🏆 GAZELAS BET - LIGA {liga} 🏆\n\n"
             for i, r in ranking.iterrows():
                 pos = i + 1
                 emoji_c = "🥇" if pos==1 else "🥈" if pos==2 else "🥉" if pos==3 else "▪️"
                 texto_copia += f"{emoji_c} {pos}º {r['Participante']} — {r['Pontos']} pts\n"
-            
             st.code(texto_copia, language="text")
         else:
-            st.info("Nenhum usuário pontuou ainda.")
+            st.info("Nenhum participante pontuou nesta liga ainda.")
 
-    # 3. ABA ESPIAR
+    # 3. ABA ESPIAR (SÓ VE_ QUEM É DA MESMA LIGA)
     with tab3:
-        if not jogos.empty:
+        if user == "ADMIN": st.warning("Aba restrita a contas de jogadores.")
+        elif not jogos.empty:
             fuso_br = pytz.timezone('America/Sao_Paulo'); agora_br = datetime.now(fuso_br).replace(tzinfo=None)
             for dia in jogos['data_apenas'].unique():
                 with st.expander(f"📅 Jogos do dia {dia}"):
@@ -311,7 +379,7 @@ else:
                         h_j = datetime.strptime(j_i['data_hora'].replace('T', ' '), '%Y-%m-%d %H:%M:%S')
                         if agora_br >= h_j:
                             if st.button(f"Ver: {j_i['time_a']} x {j_i['time_b']}", key=f"espiar_{j_i['id']}"):
-                                df_p = get_todos_palpites_do_jogo(j_i['id'])
+                                df_p = get_todos_palpites_do_jogo(j_i['id'], liga)
                                 ra, rb = j_i['gols_a'], j_i['gols_b']
                                 st.info(f"Placar: {int(ra) if pd.notnull(ra) else '?'} x {int(rb) if pd.notnull(rb) else '?'}")
                                 users_p = df_p['Participante'].tolist()
@@ -324,7 +392,7 @@ else:
                                     else: st.write(f"⏳ {txt}")
                                 for usr in ranking['Participante'].tolist():
                                     if usr not in users_p and usr != "Admin": st.write(f"⚪ **{usr}** não palpitou.")
-                        else: st.warning("🔒 Oculto até o início.")
+                        else: st.warning("🔒 Os palpites do grupo estão ocultos até o início do jogo.")
                         st.markdown("---")
 
     # 4. ABA COPA
@@ -335,7 +403,7 @@ else:
                 st.markdown(f"### {grupo}")
                 st.dataframe(df_copa[df_copa['Grupo']==grupo].sort_values(by=['Pts','SG','GP'], ascending=False).drop(columns=['Grupo']), use_container_width=True, hide_index=True)
 
-    # 5. ABA REGRAS
+    # 5. ABA REGRAS (ATUALIZADA COM OS TEMPOS DE JOGO REGULAMENTARES)
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
         st.markdown("""
@@ -346,7 +414,6 @@ else:
             <li><b>0 Pontos:</b> Erro total.</li>
         </ul>
         </div>
-        
         <div class='card'><h4 style='color:#00E676 !important;'>⏱️ Tempo de Jogo Regulamentar</h4>
         <p>A pontuação será contabilizada após o término oficial da partida:</p>
         <ul>
@@ -354,38 +421,40 @@ else:
             <li><b>120 minutos</b> nas fases eliminatórias (inclui a prorrogação, mas <b>NÃO</b> conta a disputa por pênaltis).</li>
         </ul>
         </div>
-        
-        <div class='card'><h4 style='color:#00E676 !important;'>🔒 Travamento</h4>
+        <div class='card'><h4 style='color:#00E676 !important;'>🔒 Travamento Automático</h4>
         <p>O cadeado fecha automaticamente no horário de início de cada jogo (Horário de Brasília).</p>
         </div>
-        
         <div class='card'><h4 style='color:#00E676 !important;'>👀 Espiar</h4>
-        <p>Os palpites dos adversários só ficam visíveis após o início da partida para garantir a transparência.</p>
+        <p>Os palpites dos adversários da sua liga só ficam visíveis após o início da partida.</p>
         </div>
         """, unsafe_allow_html=True)
 
-    # 6. ABA ADMIN
+    # 6. ABA ADMIN GLOBAL
     with tab4:
         if user == "ADMIN":
-            st.subheader("⚙️ Painel Admin")
+            st.subheader("🔑 Painel Mestre Global")
             if not jogos.empty:
                 for _, jo in jogos.iterrows():
                     c1, c2, c3, c4 = st.columns([2,1,1,2])
                     with c1: st.write(f"{jo['time_a']} x {jo['time_b']}")
                     ga = int(jo['gols_a']) if pd.notnull(jo['gols_a']) else 0; gb = int(jo['gols_b']) if pd.notnull(jo['gols_b']) else 0
-                    na = c1.number_input("A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
-                    nb = c2.number_input("B", value=gb, key=f"ad_b_{jo['id']}", label_visibility="collapsed")
-                    if c4.button("Salvar", key=f"ad_btn_{jo['id']}"):
-                        atualizar_resultado_real(int(jo['id']), na, nb); st.cache_data.clear(); st.success("Salvo!"); st.rerun()
+                    na = c2.number_input("A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
+                    nb = c3.number_input("B", value=gb, key=f"ad_b_{jo['id']}", label_visibility="collapsed")
+                    if c4.button("Salvar Placar", key=f"ad_btn_{jo['id']}"):
+                        atualizar_resultado_real(int(jo['id']), na, nb)
+                        st.cache_data.clear()
+                        st.success("Placar Salvo!")
+                        st.rerun()
             st.markdown("---")
             st.subheader("➕ Novo Jogo")
             c1, c2, c3, c4 = st.columns(4)
             t_a = c1.text_input("Time A"); t_b = c2.text_input("Time B"); fas = c3.selectbox("Fase", ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"]); dat = c4.text_input("Data", value="2026-06-01 16:00:00")
             if st.button("Criar Jogo"):
                 adicionar_novo_jogo(t_a, t_b, dat, fas); st.cache_data.clear(); st.rerun()
-            if st.checkbox("RESET TOTAL"):
+            if st.checkbox("RESET TOTAL (ÁREA DE PERIGO)"):
                 if st.button("LIMPAR TUDO"): reset_banco_dados(); st.cache_data.clear(); st.rerun()
-        else: st.error("Acesso restrito.")
+        else: 
+            st.error("Acesso restrito ao administrador global do bolão.")
 
-# RODAPÉ FIXO
+# RODAPÉ FIXO DE CRÉDITOS
 st.markdown("<div class='footer'>CRIADO POR LUCAS ALBERTIN • GAZELAS BET 2026</div>", unsafe_allow_html=True)
