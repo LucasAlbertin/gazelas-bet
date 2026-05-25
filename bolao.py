@@ -396,7 +396,7 @@ elif st.session_state.liga_ativa is None:
     df_membros_cached = get_todos_membros_liga_global()
     
     # 1. SANFONA: MINHAS LIGAS
-    with st.expander ("📁 Minhas Ligas"), expanded=True):
+    with st.expander (("📁 Minhas Ligas"), expanded=True):
         codigos_usuario = get_ligas_do_usuario(user)
         df_todas = get_todas_ligas()
         
