@@ -375,7 +375,7 @@ elif st.session_state.liga_ativa is None:
     st.write("Dispute o primeiro lugar do ranking de pontos com seus amigos.")
     
     # 1. SANFONA: MINHAS LIGAS
-    with st.expander("📁 Minhas Ligas (Onde estou participando)", expanded=True):
+    with st.expander("📁 Minhas Ligas)", expanded=True):
         codigos_usuario = get_ligas_do_usuario(user)
         df_todas = get_todas_ligas()
         
@@ -389,7 +389,7 @@ elif st.session_state.liga_ativa is None:
         else:
             st.info("Você ainda não entrou em nenhuma liga clássica. Entre ou crie uma abaixo!")
 
-    # 2. SANFONA: LIGAS EXISTENTES (SISTEMA INTELIGENTE DE INGRESSO)
+    # 2. SANFONA: LIGAS EXISTENTES
     with st.expander("🔍 Ligas Existentes no Banco (Descobrir e Entrar)"):
         df_todas = get_todas_ligas()
         codigos_usuario = get_ligas_do_usuario(user)
