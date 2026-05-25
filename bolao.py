@@ -120,9 +120,15 @@ def get_ligas_do_usuario(usuario):
 def ingressar_na_liga(usuario, codigo_liga):
     cod = codigo_liga.strip().upper()
     try:
+        # Verifica se já é membro para não duplicar por erro de clique duplo
+        existe = supabase.table("membros_liga").select("*").eq("usuario_nome", usuario).eq("liga_codigo", cod).execute()
+        if len(existe.data) > 0:
+            return True
+        
         supabase.table("membros_liga").insert({"usuario_nome": usuario, "liga_codigo": cod}).execute()
         return True
-    except:
+    except Exception as e:
+        st.error(f"Erro técnico ao ingressar no banco: {e}")
         return False
 
 def salvar_palpite(usuario, jogo_id, p_a, p_b, codigo_liga):
