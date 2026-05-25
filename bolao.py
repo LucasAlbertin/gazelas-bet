@@ -395,7 +395,7 @@ elif st.session_state.liga_ativa is None:
         else:
             st.info("Você ainda não entrou em nenhuma liga clássica. Entre ou crie uma abaixo!")
 
-    # 2. SANFONA: LIGAS EXISTENTES
+    # 2. SANFONA: LIGAS EXISTENTES (SISTEMA INTELIGENTE DE INGRESSO)
     with st.expander("🔍 Ligas Existentes no Banco (Descobrir e Entrar)"):
         df_todas = get_todas_ligas()
         codigos_usuario = get_ligas_do_usuario(user)
@@ -409,13 +409,17 @@ elif st.session_state.liga_ativa is None:
                     st.write(f"🔹 **{row_e['nome']}** — {count_membros_liga(row_e['codigo'])} participantes")
                     c_txt, c_btn = st.columns([3, 1])
                     pass_liga = c_txt.text_input("Senha/Código de Acesso:", key=f"input_pass_{row_e['codigo']}", placeholder="Digite o código da liga...", label_visibility="collapsed")
+                    
                     if c_btn.button("Ingressar", key=f"btn_ingres_{row_e['codigo']}"):
-                        if pass_liga.strip().upper() == row_e['codigo']:
-                            ingressar_na_liga(user, row_e['codigo'])
-                            st.success(f"Sucesso! Você entrou na liga '{row_e['nome']}'.")
-                            st.rerun()
+                        if not pass_liga:
+                            st.warning("Digite o código para entrar!")
+                        elif pass_liga.strip().upper() == row_e['codigo']:
+                            if ingressar_na_liga(user, row_e['codigo']):
+                                st.success(f"🎉 Vinculado à liga '{row_e['nome']}' com sucesso!")
+                                # Força o Streamlit a recarregar o script limpando a memória da árvore
+                                st.rerun()
                         else:
-                            st.error("Código de acesso incorreto!")
+                            st.error("❌ Código de acesso incorreto!")
                 st.markdown("<hr style='margin:10px 0; border-color:rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
         else:
             st.info("Nenhuma liga foi criada globalmente ainda.")
