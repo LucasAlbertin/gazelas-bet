@@ -463,41 +463,107 @@ else:
 
     tab1, tab2, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras"])
 
-    # 1. PALPITES (ISOLADOS POR LIGA)
+  # 1. PALPITES (ISOLADOS POR LIGA)
     with tab1:
-        st.subheader("Meus Palpites")
         if not jogos.empty:
             p_u = get_palpites_usuario(user, liga)
-            for dia in jogos['data_apenas'].unique():
-                with st.expander(f"📅 Jogos do dia {dia}"):
-                    for _, j in jogos[jogos['data_apenas'] == dia].iterrows():
-                        st.markdown("<div class='card'>", unsafe_allow_html=True)
-                        st.caption(f"🏆 {j.get('fase', 'Fase de Grupos')}")
-                        dt_str = j['data_hora'].replace('T', ' '); h_j = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                        fuso_br = pytz.timezone('America/Sao_Paulo'); agora_br = datetime.now(fuso_br).replace(tzinfo=None)
-                        travado = agora_br >= h_j
-                        
-                        p_at = p_u[p_u['jogo_id'] == j['id']]; ja_palpitou = not p_at.empty
-                        v_a = int(p_at.iloc[0]['palpite_a']) if ja_palpitou else 0; v_b = int(p_at.iloc[0]['palpite_b']) if ja_palpitou else 0
-                        
-                        c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
-                        with c1: st.write(f"**{j['time_a']}**")
-                        with c5: st.write(f"**{j['time_b']}**")
-                        
-                        if travado:
-                            with c2: st.warning(f"{v_a}" if ja_palpitou else "-", icon="🔒")
-                            with c3: st.write("X")
-                            with c4: st.warning(f"{v_b}" if ja_palpitou else "-", icon="🔒")
-                            if not ja_palpitou: st.error("❌ Não palpitou a tempo.")
-                        else:
+            
+            # Captura o horário atual de Brasília para fazer a triagem
+            fuso_br = pytz.timezone('America/Sao_Paulo')
+            agora_br = datetime.now(fuso_br).replace(tzinfo=None)
+            
+            # Criar uma coluna temporária no DataFrame para verificar se o jogo já começou/passou
+            jogos['datetime_objeto'] = pd.to_datetime(jogos['data_hora'].str.replace('T', ' '))
+            jogos['ja_comecou'] = agora_br >= jogos['datetime_objeto']
+            
+            # Separar os jogos em duas listas de dias
+            dias_futuros = jogos[jogos['ja_comecou'] == False]['data_apenas'].unique()
+            dias_passados = jogos[jogos['ja_comecou'] == True]['data_apenas'].unique()
+            
+            # -------------------------------------------------------
+            # SEÇÃO 1: PRÓXIMOS JOGOS (NO TOPO)
+            # -------------------------------------------------------
+            st.markdown("### 🔥 Próximos Jogos")
+            jogos_futuros_existentes = False
+            
+            for dia in dias_futuros:
+                # Filtrar apenas os jogos daquele dia que ainda NÃO começaram
+                jogos_do_dia = jogos[(jogos['data_apenas'] == dia) & (jogos['ja_comecou'] == False)]
+                if not jogos_do_dia.empty:
+                    jogos_futuros_existentes = True
+                    with st.expander(f"📅 Jogos de {dia} — Abertos", expanded=True):
+                        for _, j in jogos_do_dia.iterrows():
+                            st.markdown("<div class='card'>", unsafe_allow_html=True)
+                            st.caption(f"🏆 {j.get('fase', 'Fase de Grupos')}")
+                            
+                            p_at = p_u[p_u['jogo_id'] == j['id']]
+                            ja_palpitou = not p_at.empty
+                            v_a = int(p_at.iloc[0]['palpite_a']) if ja_palpitou else 0
+                            v_b = int(p_at.iloc[0]['palpite_b']) if ja_palpitou else 0
+                            
+                            c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
+                            with c1: st.write(f"**{j['time_a']}**")
+                            with c5: st.write(f"**{j['time_b']}**")
+                            
                             with c2: pa_a = st.number_input(f"A_{j['id']}", min_value=0, value=v_a, label_visibility="collapsed")
                             with c3: st.write("X")
                             with c4: pa_b = st.number_input(f"B_{j['id']}", min_value=0, value=v_b, label_visibility="collapsed")
-                            if not ja_palpitou: st.warning("⚠️ Você ainda não palpitou neste jogo!")
+                            
+                            if not ja_palpitou: 
+                                st.warning("⚠️ Você ainda não palpitou neste jogo!")
+                                
                             if st.button(f"Salvar {j['time_a']} x {j['time_b']}", key=f"btn_{j['id']}"):
                                 salvar_palpite(user, int(j['id']), pa_a, pa_b, liga)
-                                st.toast("Palpite Salvo!"); st.rerun()
-                        st.markdown("</div>", unsafe_allow_html=True)
+                                st.toast("Palpite Salvo!")
+                                st.rerun()
+                            st.markdown("</div>", unsafe_allow_html=True)
+                            
+            if not jogos_futuros_existentes:
+                st.info("Não há novos jogos agendados para os próximos dias.")
+                
+            st.markdown("<br><hr style='border-color:rgba(255,255,255,0.1);'><br>", unsafe_allow_html=True)
+            
+            # -------------------------------------------------------
+            # SEÇÃO 2: JOGOS ANTERIORES / ENCERRADOS (EMBAIXO)
+            # -------------------------------------------------------
+            st.markdown("### 🔒 Jogos Anteriores / Encerrados")
+            
+            # Se existirem dias passados, agrupa todos dentro de um expander mestre para não poluir a tela
+            if len(dias_passados) > 0:
+                with st.expander("📁 Visualizar histórico de jogos encerrados nesta liga"):
+                    # Inverter a ordem dos dias passados para que o dia mais recente fique no topo do histórico
+                    for dia in reversed(dias_passados):
+                        jogos_do_dia_passado = jogos[(jogos['data_apenas'] == dia) & (jogos['ja_comecou'] == True)]
+                        if not jogos_do_dia_passado.empty:
+                            st.markdown(f"<div style='color:#A0AEC0; font-weight:bold; padding: 5px 0;'>📅 Rodada de {dia}</div>", unsafe_allow_html=True)
+                            
+                            for _, j in jogos_do_dia_passado.iterrows():
+                                st.markdown("<div class='card' style='opacity: 0.75;'>", unsafe_allow_html=True)
+                                st.caption(f"🔒 {j.get('fase', 'Fase de Grupos')} — Encerrado")
+                                
+                                p_at = p_u[p_u['jogo_id'] == j['id']]
+                                ja_palpitou = not p_at.empty
+                                v_a = int(p_at.iloc[0]['palpite_a']) if ja_palpitou else "-"
+                                v_b = int(p_at.iloc[0]['palpite_b']) if ja_palpitou else "-"
+                                
+                                c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
+                                with c1: st.write(f"{j['time_a']}")
+                                with c5: st.write(f"{j['time_b']}")
+                                
+                                # Mostra o placar travado com ícone de cadeado de forma limpa
+                                with c2: st.markdown(f"<div style='text-align:center; background:#1A202C; border-radius:5px; padding:3px;'><b>{v_a}</b></div>", unsafe_allow_html=True)
+                                with c3: st.write("X")
+                                with c4: st.markdown(f"<div style='text-align:center; background:#1A202C; border-radius:5px; padding:3px;'><b>{v_b}</b></div>", unsafe_allow_html=True)
+                                
+                                # Mostra o placar real do jogo do lado se o admin já tiver inserido
+                                if pd.notnull(j['gols_a']) and pd.notnull(j['gols_b']):
+                                    st.markdown(f"<div style='text-align:center; font-size:12px; color:#00E676;'>Placar oficial: {int(j['gols_a'])} x {int(j['gols_b'])}</div>", unsafe_allow_html=True)
+                                elif not ja_palpitou:
+                                    st.markdown("<div style='text-align:center; font-size:12px; color:#EF4444;'>❌ Você perdeu o prazo deste jogo.</div>", unsafe_allow_html=True)
+                                    
+                                st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.info("Nenhum jogo foi encerrado até o momento.")
 
     # 2. RANKING COMPACTO DA LIGA
     with tab2:
