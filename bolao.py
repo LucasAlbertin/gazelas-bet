@@ -34,15 +34,6 @@ p, span, label { color: #E2E8F0 !important; }
     box-shadow: 0 10px 25px rgba(0,0,0,0.25);
 }
 
-/* Ranking e Tabelas */
-.rank-card {
-    background: #151C32;
-    padding: 18px;
-    border-radius: 16px;
-    margin-bottom: 12px;
-    border: 1px solid rgba(255,255,255,0.05);
-}
-
 /* Botões Modernos */
 .stButton > button {
     width: 100%;
@@ -83,7 +74,7 @@ ADMIN_USER = "Admin"
 ADMIN_PASS = "gazelas123" 
 
 # =========================================================
-# FUNÇÕES DE BANCO DE DADOS
+# FUNÇÕES DE BANCO DE DADOS (ARQUITETURA MULTI-LIGA)
 # =========================================================
 
 @st.cache_data(ttl=600)
@@ -94,17 +85,19 @@ def get_jogos():
         df['data_apenas'] = pd.to_datetime(df['data_hora'].str.replace('T', ' ')).dt.strftime('%d/%m/%Y')
     return df
 
-def verificar_liga_existente(codigo_liga):
-    res = supabase.table("ligas").select("*").eq("codigo", codigo_liga.strip().upper()).execute()
-    return len(res.data) > 0
-
 def get_todas_ligas():
     res = supabase.table("ligas").select("*").order("nome").execute()
     return pd.DataFrame(res.data)
 
-def criar_nova_liga(nome_liga, codigo_liga):
+def verificar_liga_existente(codigo_liga):
+    res = supabase.table("ligas").select("*").eq("codigo", codigo_liga.strip().upper()).execute()
+    return len(res.data) > 0
+
+def criar_nova_liga(nome_liga, codigo_liga, usuario_criador):
     cod = codigo_liga.strip().upper()
-    res = supabase.table("ligas").insert({"nome": nome_liga.strip(), "codigo": cod}).execute()
+    supabase.table("ligas").insert({"nome": nome_liga.strip(), "codigo": cod}).execute()
+    # Quem cria a liga já entra nela automaticamente
+    ingressar_na_liga(usuario_criador, cod)
     return True
 
 def criar_usuario(nome, senha):
@@ -114,17 +107,23 @@ def criar_usuario(nome, senha):
     except:
         return False
 
-def vincular_usuario_a_liga(nome, codigo_liga):
-    try:
-        cod = codigo_liga.strip().upper()
-        supabase.table("usuarios").update({"liga_codigo": cod}).eq("nome", nome.strip()).execute()
-        return True
-    except:
-        return False
-
 def verificar_login(nome, senha):
     res = supabase.table("usuarios").select("*").eq("nome", nome.strip()).eq("senha", senha).execute()
     return len(res.data) > 0
+
+def get_ligas_do_usuario(usuario):
+    res = supabase.table("membros_liga").select("liga_codigo").eq("usuario_nome", usuario).execute()
+    if not res.data:
+        return []
+    return [item['liga_codigo'] for item in res.data]
+
+def ingressar_na_liga(usuario, codigo_liga):
+    cod = codigo_liga.strip().upper()
+    try:
+        supabase.table("membros_liga").insert({"usuario_nome": usuario, "liga_codigo": cod}).execute()
+        return True
+    except:
+        return False
 
 def salvar_palpite(usuario, jogo_id, p_a, p_b, codigo_liga):
     cod = codigo_liga.strip().upper()
@@ -149,11 +148,11 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
 
 def calcular_ranking(codigo_liga):
     cod = codigo_liga.strip().upper()
-    usuarios_res = supabase.table("usuarios").select("nome").eq("liga_codigo", cod).execute()
+    membros_res = supabase.table("membros_liga").select("usuario_nome").eq("liga_codigo", cod).execute()
     jogos_res = supabase.table("jogos").select("*").not_.is_("gols_a", "null").execute()
     palpites_res = supabase.table("palpites").select("*").eq("liga_codigo", cod).execute()
     
-    pontos = {u['nome']: 0 for u in usuarios_res.data}
+    pontos = {m['usuario_nome']: 0 for m in membros_res.data}
     jogos_dict = {j['id']: j for j in jogos_res.data}
     
     for p in palpites_res.data:
@@ -170,18 +169,23 @@ def calcular_ranking(codigo_liga):
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
 
+def count_membros_liga(codigo_liga):
+    res = supabase.table("membros_liga").select("id").eq("liga_codigo", codigo_liga).execute()
+    return len(res.data)
+
 def get_todos_usuarios_global():
-    res = supabase.table("usuarios").select("nome, senha, liga_codigo").order("nome").execute()
+    res = supabase.table("usuarios").select("nome, senha").order("nome").execute()
     return pd.DataFrame(res.data)
 
-# --- FUNÇÕES EXCLUSIVAS DE GERENCIAMENTO DO ADMIN ---
+# --- GERENCIAMENTO ADMIN ---
 def deletar_usuario(nome_usuario):
     supabase.table("palpites").delete().eq("usuario", nome_usuario).execute()
+    supabase.table("membros_liga").delete().eq("usuario_nome", nome_usuario).execute()
     supabase.table("usuarios").delete().eq("nome", nome_usuario).execute()
 
 def deletar_liga(cod_liga):
     supabase.table("palpites").delete().eq("liga_codigo", cod_liga).execute()
-    supabase.table("usuarios").update({"liga_codigo": None}).eq("liga_codigo", cod_liga).execute()
+    supabase.table("membros_liga").delete().eq("liga_codigo", cod_liga).execute()
     supabase.table("ligas").delete().eq("codigo", cod_liga).execute()
 
 def deletar_jogo(jogo_id):
@@ -197,6 +201,7 @@ def adicionar_novo_jogo(time_a, time_b, data_hora, fase):
 def reset_banco_dados():
     try:
         supabase.table("palpites").delete().neq("usuario", "").execute()
+        supabase.table("membros_liga").delete().neq("liga_codigo", "").execute()
         supabase.table("usuarios").delete().neq("nome", "").execute()
         supabase.table("ligas").delete().neq("nome", "").execute()
         supabase.table("jogos").update({"gols_a": None, "gols_b": None}).neq("time_a", "").execute()
@@ -240,153 +245,261 @@ def calcular_tabela_copa():
     return pd.DataFrame(list(tabela.values()))
 
 # =========================================================
-# INTERFACE DE LOGIN / CADASTRO
+# HEADER E SESSÕES
 # =========================================================
+st.markdown("<div style='text-align:center;'><h1>⚽ GAZELAS BET</h1></div>", unsafe_allow_html=True)
+
 if 'usuario_logado' not in st.session_state: st.session_state.usuario_logado = None
 if 'liga_ativa' not in st.session_state: st.session_state.liga_ativa = None
 
+# =========================================================
+# FLUXO 1: DESLOGADO (LOGIN / CADASTRO CLEAN)
+# =========================================================
 if st.session_state.usuario_logado is None:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        aba_login, aba_criar_conta, aba_criar_liga = st.tabs(["🔐 Entrar", "🆕 Criar Conta", "🏆 Criar Liga"])
+        aba_login, aba_criar_conta = st.tabs(["🔐 Entrar", "🆕 Criar Conta"])
         
-        # ABA ENTRAR
         with aba_login:
             nl = st.text_input("Usuário:", key="login_user")
             sl = st.text_input("Senha:", type="password", key="login_pass")
-            ll = st.text_input("Código da Liga:", help="Deixe em branco apenas se for o Admin.", key="login_liga")
             if st.button("Entrar no Sistema", type="primary"):
                 if nl == ADMIN_USER and sl == ADMIN_PASS:
                     st.session_state.usuario_logado = "ADMIN"
-                    st.session_state.liga_ativa = "GLOBAL"
                     st.rerun()
-                elif not ll:
-                    st.error("🚨 Jogadores comuns precisam informar o Código da Liga para entrar!")
                 elif verificar_login(nl, sl):
-                    if verificar_liga_existente(ll):
-                        vincular_usuario_a_liga(nl, ll)
-                        st.session_state.usuario_logado = nl
-                        st.session_state.liga_ativa = ll.strip().upper()
-                        st.rerun()
-                    else:
-                        st.error("🚨 Esse código de liga não existe! Verifique com o administrador.")
+                    st.session_state.usuario_logado = nl
+                    st.rerun()
                 else: 
                     st.error("❌ Usuário ou senha incorretos!")
                     
-        # ABA CRIAR CONTA
         with aba_criar_conta:
-            st.info("Crie seu acesso global. Você escolherá sua liga na hora de entrar!")
+            st.info("Crie seu acesso. Você escolherá suas ligas na próxima tela!")
             nn = st.text_input("Escolha um Nome de Usuário:", key="create_user")
             sn = st.text_input("Escolha uma Senha:", type="password", key="create_pass")
             if st.button("Cadastrar Nova Conta"):
                 if nn and sn:
                     if criar_usuario(nn, sn): 
-                        st.success("🎉 Conta criada com sucesso! Vá para a aba '🔐 Entrar'.")
+                        st.success("🎉 Conta criada! Vá para a aba '🔐 Entrar'.")
                     else: 
-                        st.error("🚨 Este nome de usuário já está sendo utilizado por outra pessoa.")
+                        st.error("🚨 Nome de usuário já ocupado.")
                 else: 
                     st.warning("Preencha todos os campos!")
-                    
-        # ABA CRIAR LIGA
-        with aba_criar_liga:
-            st.info("Crie um grupo exclusivo para seus amigos.")
-            nome_liga = st.text_input("Nome da Liga (Ex: Amigos da FATEC):")
-            cod_liga = st.text_input("Código de Acesso Personalizado (Ex: FATEC2026):")
-            if st.button("Registrar Nova Liga"):
-                if nome_liga and cod_liga:
-                    if verificar_liga_existente(cod_liga):
-                        st.error("🚨 Esse código de acesso já está em uso por outro grupo! Escolha outro.")
-                    else:
-                        try:
-                            if criar_nova_liga(nome_liga, cod_liga):
-                                st.success(f"Liga '{nome_liga}' criada com sucesso! Compartilhe o código '{cod_liga.upper()}' com seus amigos.")
-                        except Exception as error_db:
-                            st.error(f"❌ Erro de conexão com o banco: {error_db}")
-                else:
-                    st.warning("Preencha o nome e o código da liga!")
-                    
         st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================================================
-# APP LOGADO (ISOLADO POR LIGA)
+# FLUXO 2: LOGADO COMO ADMIN MESTRE GLOBAL
+# =========================================================
+elif st.session_state.usuario_logado == "ADMIN":
+    st.error("🤖 MESTRE GLOBAL — PAINEL DE CONTROLE SUPREMO")
+    if st.button("Sair do Modo Admin"):
+        st.session_state.usuario_logado = None
+        st.rerun()
+        
+    jogos = get_jogos()
+    
+    # Gerenciador de Contas
+    with st.expander("👥 Gerenciar Contas de Jogadores"):
+        df_usuarios = get_todos_usuarios_global()
+        if not df_usuarios.empty:
+            for _, row_u in df_usuarios.iterrows():
+                c_u1, c_u2, c_u3 = st.columns([3, 3, 1])
+                c_u1.write(f"👤 {row_u['nome']}")
+                c_u2.write(f"🔑 Senha: `{row_u['senha']}`")
+                if c_u3.button("Excluir", key=f"del_user_{row_u['nome']}"):
+                    deletar_usuario(row_u['nome'])
+                    st.rerun()
+                    
+    # Gerenciador de Ligas
+    with st.expander("🏆 Gerenciar Ligas Ativas"):
+        df_ligas = get_todas_ligas()
+        if not df_ligas.empty:
+            for _, row_l in df_ligas.iterrows():
+                c_l1, c_l2, c_l3 = st.columns([3, 3, 1])
+                c_l1.write(f"🔹 {row_l['nome']}")
+                c_l2.write(f"Código: `{row_l['codigo']}`")
+                if c_l3.button("Apagar", key=f"del_liga_{row_l['codigo']}"):
+                    deletar_liga(row_l['codigo'])
+                    st.rerun()
+
+    # Gerenciador de Resultados
+    st.write("📊 **Resultados dos Jogos:**")
+    if not jogos.empty:
+        for _, jo in jogos.iterrows():
+            c1, c2, c3, c4, c5 = st.columns([2,1,1,2,1])
+            c1.write(f"{jo['time_a']} x {jo['time_b']}")
+            ga = int(jo['gols_a']) if pd.notnull(jo['gols_a']) else 0
+            gb = int(jo['gols_b']) if pd.notnull(jo['gols_b']) else 0
+            na = c2.number_input("A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
+            nb = c3.number_input("B", value=gb, key=f"ad_b_{jo['id']}", label_visibility="collapsed")
+            if c4.button("Salvar Placar", key=f"ad_btn_{jo['id']}"):
+                atualizar_resultado_real(int(jo['id']), na, nb)
+                st.cache_data.clear()
+                st.rerun()
+            if c5.button("❌", key=f"del_jogo_{jo['id']}"):
+                deletar_jogo(jo['id'])
+                st.cache_data.clear()
+                st.rerun()
+                
+    st.markdown("---")
+    st.subheader("➕ Novo Jogo")
+    c1, c2, c3, c4 = st.columns(4)
+    t_a = c1.text_input("Time A")
+    t_b = c2.text_input("Time B")
+    fas = c3.selectbox("Fase", ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"])
+    dat = c4.text_input("Data", value="2026-06-01 16:00:00")
+    if st.button("Criar Jogo"):
+        adicionar_novo_jogo(t_a, t_b, dat, fas)
+        st.cache_data.clear()
+        st.rerun()
+        
+    if st.checkbox("RESET TOTAL (ÁREA DE PERIGO)"):
+        if st.button("LIMPAR BANCO COMPLETO"):
+            reset_banco_dados()
+            st.cache_data.clear()
+            st.rerun()
+
+# =========================================================
+# FLUXO 3: LOGADO MAS SEM LIGA SELECIONADA (PAINEL INTERMEDIÁRIO DE SANFONAS)
+# =========================================================
+elif st.session_state.liga_ativa is None:
+    user = st.session_state.usuario_logado
+    col_u, col_s = st.columns([5,1])
+    col_u.write(f"👋 Olá, **{user}**!")
+    if col_s.button("Sair"):
+        st.session_state.usuario_logado = None
+        st.rerun()
+        
+    st.subheader("🏆 Minhas Ligas & Grupos")
+    st.write("Dispute o primeiro lugar do ranking de pontos com seus amigos.")
+    
+    # 1. SANFONA: MINHAS LIGAS
+    with st.expander("📁 Minhas Ligas (Onde estou participando)", expanded=True):
+        codigos_usuario = get_ligas_do_usuario(user)
+        df_todas = get_todas_ligas()
+        
+        if codigos_usuario and not df_todas.empty:
+            df_minhas = df_todas[df_todas['codigo'].isin(codigos_usuario)]
+            for _, row_m in df_minhas.iterrows():
+                st.markdown(f"<div style='padding:10px; background:#1E2640; border-radius:10px; margin-bottom:8px;'><b>🛡️ {row_m['nome']}</b> (Código: {row_m['codigo']})</div>", unsafe_allow_html=True)
+                if st.button(f"Acessar Sala do Bolão: {row_m['nome']}", key=f"entrar_sala_{row_m['codigo']}"):
+                    st.session_state.liga_ativa = row_m['codigo']
+                    st.rerun()
+        else:
+            st.info("Você ainda não entrou em nenhuma liga clássica. Entre ou crie uma abaixo!")
+
+    # 2. SANFONA: LIGAS EXISTENTES (SISTEMA INTELIGENTE DE INGRESSO)
+    with st.expander("🔍 Ligas Existentes no Banco (Descobrir e Entrar)"):
+        df_todas = get_todas_ligas()
+        codigos_usuario = get_ligas_do_usuario(user)
+        
+        if not df_todas.empty:
+            for _, row_e in df_todas.iterrows():
+                # Se o cara já tá na liga, avisa. Se não tá, abre o input
+                if row_e['codigo'] in codigos_usuario:
+                    st.write(f"🟢 **{row_e['nome']}** — Você já participa deste grupo!")
+                else:
+                    st.write(f"🔹 **{row_e['nome']}** — {count_membros_liga(row_e['codigo'])} participantes")
+                    c_txt, c_btn = st.columns([3, 1])
+                    pass_liga = c_txt.text_input("Senha/Código de Acesso:", key=f"input_pass_{row_e['codigo']}", placeholder="Digite o código da liga...", label_visibility="collapsed")
+                    if c_btn.button("Ingressar", key=f"btn_ingres_{row_e['codigo']}"):
+                        if pass_liga.strip().upper() == row_e['codigo']:
+                            ingressar_na_liga(user, row_e['codigo'])
+                            st.success(f"Sucesso! Você entrou na liga '{row_e['nome']}'.")
+                            st.rerun()
+                        else:
+                            st.error("Código de acesso incorreto!")
+                st.markdown("<hr style='margin:10px 0; border-color:rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
+        else:
+            st.info("Nenhuma liga foi criada globalmente ainda.")
+
+    # 3. SANFONA: CRIAR LIGA
+    with st.expander("➕ Criar Nova Liga Clássica"):
+        n_liga = st.text_input("Nome da Liga (Ex: Cartoleiros da FATEC):")
+        c_liga = st.text_input("Código Customizado da Liga (Ex: COPA99):")
+        if st.button("Registrar Liga Clássica"):
+            if n_liga and c_liga:
+                if verificar_liga_existente(c_liga):
+                    st.error("🚨 Esse código já existe! Escolha outro código de acesso.")
+                else:
+                    criar_nova_liga(n_liga, c_liga, user)
+                    st.success(f"Liga '{n_liga}' criada! Divulgue o código '{c_liga.upper()}' pros guris.")
+                    st.rerun()
+            else:
+                st.warning("Preencha todos os campos para fundar a liga.")
+
+# =========================================================
+# FLUXO 4: DENTRO DE UMA LIGA ATIVA (AMBIENTE FILTRADO)
 # =========================================================
 else:
     user = st.session_state.usuario_logado
     liga = st.session_state.liga_ativa
     jogos = get_jogos()
-    ranking = calcular_ranking(liga) if user != "ADMIN" else pd.DataFrame()
+    ranking = calcular_ranking(liga)
     
-    col_n, col_s = st.columns([5, 1])
-    with col_n: 
-        if user == "ADMIN": st.error("Logado como **ADMINISTRADOR MESTRE GLOBAL**.")
-        else: st.write(f"👋 Jogador: **{user}** | 🏆 Liga: **{liga}**")
-    with col_s: 
-        if st.button("Sair"): 
-            st.session_state.usuario_logado = None
-            st.session_state.liga_ativa = None
-            st.rerun()
-
-    # Painel de métricas compactas
+    # Cabeçalho de retorno estilizado
+    if st.button("🔙 Voltar para a Lista de Minhas Ligas"):
+        st.session_state.liga_ativa = None
+        st.rerun()
+        
+    st.write(f"👤 Jogador: **{user}** | 🛡️ Liga Ativa: **{liga}**")
+    
+    # Painel de métricas compactas da liga
     c1, c2, c3 = st.columns(3)
-    c1.metric("👥 Jogadores na Liga", len(ranking) if user != "ADMIN" else "Mestre")
-    c2.metric("⚽ Total de Jogos", len(jogos))
+    c1.metric("👥 Jogadores no Grupo", len(ranking))
+    c2.metric("⚽ Jogos Ativos", len(jogos))
     c3.metric("🏆 Líder da Liga", ranking.iloc[0]['Participante'] if not ranking.empty else "-")
 
-    tab1, tab2, tab3, tab_copa, tab_regras, tab4 = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras", "⚙️ Admin"])
+    tab1, tab2, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras"])
 
-    # 1. ABA PALPITES
+    # 1. PALPITES (ISOLADOS POR LIGA)
     with tab1:
-        if user == "ADMIN": st.warning("Admin Mestre global não realiza palpites.")
-        else:
-            st.subheader("Meus Palpites")
-            if not jogos.empty:
-                p_u = get_palpites_usuario(user, liga)
-                for dia in jogos['data_apenas'].unique():
-                    with st.expander(f"📅 Jogos do dia {dia}"):
-                        for _, j in jogos[jogos['data_apenas'] == dia].iterrows():
-                            st.markdown("<div class='card'>", unsafe_allow_html=True)
-                            st.caption(f"🏆 {j.get('fase', 'Fase de Grupos')}")
-                            dt_str = j['data_hora'].replace('T', ' '); h_j = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
-                            fuso_br = pytz.timezone('America/Sao_Paulo'); agora_br = datetime.now(fuso_br).replace(tzinfo=None)
-                            travado = agora_br >= h_j
-                            
-                            p_at = p_u[p_u['jogo_id'] == j['id']]; ja_palpitou = not p_at.empty
-                            v_a = int(p_at.iloc[0]['palpite_a']) if ja_palpitou else 0; v_b = int(p_at.iloc[0]['palpite_b']) if ja_palpitou else 0
-                            
-                            c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
-                            with c1: st.write(f"**{j['time_a']}**")
-                            with c5: st.write(f"**{j['time_b']}**")
-                            
-                            if travado:
-                                with c2: st.warning(f"{v_a}" if ja_palpitou else "-", icon="🔒")
-                                with c3: st.write("X")
-                                with c4: st.warning(f"{v_b}" if ja_palpitou else "-", icon="🔒")
-                                if not ja_palpitou: st.error("❌ Não palpitou a tempo.")
-                            else:
-                                with c2: pa_a = st.number_input(f"A_{j['id']}", min_value=0, value=v_a, label_visibility="collapsed")
-                                with c3: st.write("X")
-                                with c4: pa_b = st.number_input(f"B_{j['id']}", min_value=0, value=v_b, label_visibility="collapsed")
-                                if not ja_palpitou: st.warning("⚠️ Você ainda não palpitou neste jogo!")
-                                if st.button(f"Salvar {j['time_a']} x {j['time_b']}", key=f"btn_{j['id']}"):
-                                    salvar_palpite(user, int(j['id']), pa_a, pa_b, liga)
-                                    st.toast("Palpite Salvo!"); st.rerun()
-                            st.markdown("</div>", unsafe_allow_html=True)
+        st.subheader("Meus Palpites")
+        if not jogos.empty:
+            p_u = get_palpites_usuario(user, liga)
+            for dia in jogos['data_apenas'].unique():
+                with st.expander(f"📅 Jogos do dia {dia}"):
+                    for _, j in jogos[jogos['data_apenas'] == dia].iterrows():
+                        st.markdown("<div class='card'>", unsafe_allow_html=True)
+                        st.caption(f"🏆 {j.get('fase', 'Fase de Grupos')}")
+                        dt_str = j['data_hora'].replace('T', ' '); h_j = datetime.strptime(dt_str, '%Y-%m-%d %H:%M:%S')
+                        fuso_br = pytz.timezone('America/Sao_Paulo'); agora_br = datetime.now(fuso_br).replace(tzinfo=None)
+                        travado = agora_br >= h_j
+                        
+                        p_at = p_u[p_u['jogo_id'] == j['id']]; ja_palpitou = not p_at.empty
+                        v_a = int(p_at.iloc[0]['palpite_a']) if ja_palpitou else 0; v_b = int(p_at.iloc[0]['palpite_b']) if ja_palpitou else 0
+                        
+                        c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
+                        with c1: st.write(f"**{j['time_a']}**")
+                        with c5: st.write(f"**{j['time_b']}**")
+                        
+                        if travado:
+                            with c2: st.warning(f"{v_a}" if ja_palpitou else "-", icon="🔒")
+                            with c3: st.write("X")
+                            with c4: st.warning(f"{v_b}" if ja_palpitou else "-", icon="🔒")
+                            if not ja_palpitou: st.error("❌ Não palpitou a tempo.")
+                        else:
+                            with c2: pa_a = st.number_input(f"A_{j['id']}", min_value=0, value=v_a, label_visibility="collapsed")
+                            with c3: st.write("X")
+                            with c4: pa_b = st.number_input(f"B_{j['id']}", min_value=0, value=v_b, label_visibility="collapsed")
+                            if not ja_palpitou: st.warning("⚠️ Você ainda não palpitou neste jogo!")
+                            if st.button(f"Salvar {j['time_a']} x {j['time_b']}", key=f"btn_{j['id']}"):
+                                salvar_palpite(user, int(j['id']), pa_a, pa_b, liga)
+                                st.toast("Palpite Salvo!"); st.rerun()
+                        st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. ABA RANKING COMPACTA
+    # 2. RANKING COMPACTO DA LIGA
     with tab2:
-        st.subheader("🏆 Classificação Interna")
-        if user == "ADMIN": st.info("O Admin gerencia as ligas e dados de forma global.")
-        elif not ranking.empty:
+        st.subheader("🏆 Classificação da Liga Clássica")
+        if not ranking.empty:
             df_visual = ranking.copy()
             df_visual.insert(0, 'Posição', range(1, len(df_visual) + 1))
-            
             def emojificar_posicao(pos):
                 if pos == 1: return "🥇 1º"
                 elif pos == 2: return "🥈 2º"
                 elif pos == 3: return "🥉 3º"
                 return f"▪️ {pos}º"
-            
             df_visual['Posição'] = df_visual['Posição'].apply(emojificar_posicao)
             
             st.dataframe(
@@ -399,21 +512,18 @@ else:
                     "Pontos": st.column_config.NumberColumn("Pontos Total", format="%d pts")
                 }
             )
-            
             st.markdown("---")
             texto_copia = f"🏆 GAZELAS BET - LIGA {liga} 🏆\n\n"
             for i, r in ranking.iterrows():
-                pos = i + 1
-                emoji_c = "🥇" if pos==1 else "🥈" if pos==2 else "🥉" if pos==3 else "▪️"
-                texto_copia += f"{emoji_c} {pos}º {r['Participante']} — {r['Pontos']} pts\n"
+                texto_copia += f"{i+1}º {r['Participante']} — {r['Pontos']} pts\n"
             st.code(texto_copia, language="text")
         else:
-            st.info("Nenhum participante pontuou nesta liga ainda.")
+            st.info("Ninguém pontuou nessa liga ainda.")
 
-    # 3. ABA ESPIAR
+    # 3. ESPIAR (SÓ COMPANHEIROS DA MESMA LIGA)
     with tab3:
-        if user == "ADMIN": st.warning("Aba restrita a contas de jogadores comuns.")
-        elif not jogos.empty:
+        st.subheader("👀 Espiar Adversários")
+        if not jogos.empty:
             fuso_br = pytz.timezone('America/Sao_Paulo'); agora_br = datetime.now(fuso_br).replace(tzinfo=None)
             for dia in jogos['data_apenas'].unique():
                 with st.expander(f"📅 Jogos do dia {dia}"):
@@ -424,7 +534,7 @@ else:
                             if st.button(f"Ver: {j_i['time_a']} x {j_i['time_b']}", key=f"espiar_{j_i['id']}"):
                                 df_p = get_todos_palpites_do_jogo(j_i['id'], liga)
                                 ra, rb = j_i['gols_a'], j_i['gols_b']
-                                st.info(f"Placar: {int(ra) if pd.notnull(ra) else '?'} x {int(rb) if pd.notnull(rb) else '?'}")
+                                st.info(f"Placar Real: {int(ra) if pd.notnull(ra) else '?'} x {int(rb) if pd.notnull(rb) else '?'}")
                                 users_p = df_p['Participante'].tolist()
                                 for _, row in df_p.iterrows():
                                     pa, pb = int(row['Gols A']), int(row['Gols B']); txt = f"**{row['Participante']}**: {pa} x {pb}"
@@ -434,11 +544,11 @@ else:
                                         else: st.error(f"❌ {txt}")
                                     else: st.write(f"⏳ {txt}")
                                 for usr in ranking['Participante'].tolist():
-                                    if usr not in users_p and usr != "Admin": st.write(f"⚪ **{usr}** não palpitou.")
-                        else: st.warning("🔒 Os palpites do grupo estão ocultos até o início do jogo.")
+                                    if usr not in users_p: st.write(f"⚪ **{usr}** não palpitou.")
+                        else: st.warning("🔒 Oculto até o início do jogo.")
                         st.markdown("---")
 
-    # 4. ABA COPA
+    # 4. TABELA COPA MUNDIAL
     with tab_copa:
         df_copa = calcular_tabela_copa()
         if not df_copa.empty:
@@ -446,7 +556,7 @@ else:
                 st.markdown(f"### {grupo}")
                 st.dataframe(df_copa[df_copa['Grupo']==grupo].sort_values(by=['Pts','SG','GP'], ascending=False).drop(columns=['Grupo']), use_container_width=True, hide_index=True)
 
-    # 5. ABA REGRAS
+    # 5. REGRAS
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
         st.markdown("""
@@ -455,108 +565,15 @@ else:
             <li><b>3 Pontos:</b> Placar exato.</li>
             <li><b>1 Ponto:</b> Acertou vencedor ou empate.</li>
             <li><b>0 Pontos:</b> Erro total.</li>
-        </ul>
-        </div>
-        <div class='card'><h4 style='color:#00E676 !important;'>⏱️ Tempo de Jogo Regulamentar</h4>
-        <p>A pontuação será contabilizada após o término oficial da partida:</p>
+        </ul></div>
+        <div class='card'><h4 style='color:#00E676 !important;'>⏱️ Tempo Regulamentar</h4>
         <ul>
             <li><b>90 minutos</b> na fase de grupos.</li>
-            <li><b>120 minutos</b> nas fases eliminatórias (inclui a prorrogação, mas <b>NÃO</b> conta a disputa por pênaltis).</li>
-        </ul>
-        </div>
-        <div class='card'><h4 style='color:#00E676 !important;'>🔒 Travamento Automático</h4>
-        <p>O cadeado fecha automaticamente no horário de início de cada jogo (Horário de Brasília).</p>
-        </div>
-        <div class='card'><h4 style='color:#00E676 !important;'>👀 Espiar</h4>
-        <p>Os palpites dos adversários da sua liga só ficam visíveis após o início da partida.</p>
-        </div>
+            <li><b>120 minutos</b> no mata-mata (inclui prorrogação, <b>NÃO</b> conta pênaltis).</li>
+        </ul></div>
+        <div class='card'><h4 style='color:#00E676 !important;'>🔒 Travamento</h4>
+        <p>O bloqueio ocorre de forma automática no minuto inicial do jogo.</p></div>
         """, unsafe_allow_html=True)
-
-    # 6. ABA ADMIN GLOBAL (COMPLETAMENTE EXPANDIDA COM CONTROLE TOTAL)
-    with tab4:
-        if user == "ADMIN":
-            st.subheader("🔑 Painel Mestre Global")
-            
-            # --- MONITOR DE USUÁRIOS (VER LOGINS, SENHAS E EXCLUIR FAKES) ---
-            with st.expander("👥 Gerenciar Contas de Jogadores"):
-                df_usuarios = get_todos_usuarios_global()
-                if not df_usuarios.empty:
-                    st.write("Lista completa de jogadores no sistema:")
-                    for _, row_u in df_usuarios.iterrows():
-                        col_u1, col_u2, col_u3, col_u4 = st.columns([2, 2, 2, 1])
-                        with col_u1: st.write(f"👤 {row_u['nome']}")
-                        with col_u2: st.write(f"🔑 Senha: `{row_u['senha']}`")
-                        with col_u3: st.write(f"🏆 Liga: `{row_u['liga_codigo']}`")
-                        with col_u4:
-                            if st.button("Excluir", key=f"del_user_{row_u['nome']}"):
-                                deletar_usuario(row_u['nome'])
-                                st.success(f"{row_u['nome']} apagado!")
-                                st.rerun()
-                else:
-                    st.info("Nenhum usuário cadastrado.")
-
-            # --- MONITOR DE LIGAS (VER E EXCLUIR GRUPOS INATIVOS) ---
-            with st.expander("🏆 Gerenciar Ligas Ativas"):
-                df_ligas = get_todas_ligas()
-                if not df_ligas.empty:
-                    for _, row_l in df_ligas.iterrows():
-                        col_l1, col_l2, col_l3 = st.columns([3, 3, 1])
-                        with col_l1: st.write(f"🔹 {row_l['nome']}")
-                        with col_l2: st.write(f"Código: `{row_l['codigo']}`")
-                        with col_l3:
-                            if st.button("Apagar", key=f"del_liga_{row_l['codigo']}"):
-                                deletar_liga(row_l['codigo'])
-                                st.success("Liga excluída!")
-                                st.rerun()
-                else:
-                    st.info("Nenhuma liga criada ainda.")
-
-            st.markdown("---")
-            
-            # --- MONITOR DE JOGOS (EDITAR PLACAR E EXCLUIR PARTIDA) ---
-            st.write("📊 **Gerenciar Resultados dos Jogos:**")
-            if not jogos.empty:
-                for _, jo in jogos.iterrows():
-                    c1, c2, c3, c4, c5 = st.columns([2,1,1,2,1])
-                    with c1: st.write(f"{jo['time_a']} x {jo['time_b']}")
-                    ga = int(jo['gols_a']) if pd.notnull(jo['gols_a']) else 0
-                    gb = int(jo['gols_b']) if pd.notnull(jo['gols_b']) else 0
-                    na = c2.number_input("A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
-                    nb = c3.number_input("B", value=gb, key=f"ad_b_{jo['id']}", label_visibility="collapsed")
-                    
-                    with c4:
-                        if st.button("Salvar Placar", key=f"ad_btn_{jo['id']}"):
-                            atualizar_resultado_real(int(jo['id']), na, nb)
-                            st.cache_data.clear()
-                            st.success("Salvo!")
-                            st.rerun()
-                    with c5:
-                        if st.button("❌", key=f"del_jogo_{jo['id']}", help="Excluir este jogo permanentemente"):
-                            deletar_jogo(jo['id'])
-                            st.cache_data.clear()
-                            st.rerun()
-                            
-            st.markdown("---")
-            st.subheader("➕ Novo Jogo")
-            c1, c2, c3, c4 = st.columns(4)
-            t_a = c1.text_input("Time A")
-            t_b = c2.text_input("Time B")
-            fas = c3.selectbox("Fase", ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"])
-            dat = c4.text_input("Data", value="2026-06-01 16:00:00")
-            if st.button("Criar Jogo"):
-                adicionar_novo_jogo(t_a, t_b, dat, fas)
-                st.cache_data.clear()
-                st.rerun()
-                
-            st.markdown("---")
-            if st.checkbox("RESET TOTAL (ÁREA DE PERIGO)"):
-                if st.button("LIMPAR TUDO"): 
-                    reset_banco_dados()
-                    st.cache_data.clear()
-                    st.success("Banco de dados limpo com sucesso!")
-                    st.rerun()
-        else: 
-            st.error("Acesso restrito ao administrador global do bolão.")
 
 # RODAPÉ FIXO DE CRÉDITOS
 st.markdown("<div class='footer'>CRIADO POR LUCAS ALBERTIN • GAZELAS BET 2026</div>", unsafe_allow_html=True)
