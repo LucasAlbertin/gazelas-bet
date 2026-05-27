@@ -424,7 +424,7 @@ elif st.session_state.liga_ativa is None:
     df_membros_cached = get_todos_membros_liga_global()
     
     # 1. SANFONA: MINHAS LIGAS
-    with st.expander("📁 Minhas Ligas (Onde estou participando)", expanded=True):
+    with st.expander("📁 Minhas Ligas", expanded=True):
         codigos_usuario = get_ligas_do_usuario(user)
         df_todas = get_todas_ligas()
         
@@ -458,11 +458,11 @@ elif st.session_state.liga_ativa is None:
                             st.warning("Digite o código para entrar!")
                         elif pass_liga.strip().upper() == row_e['codigo']:
                             if ingressar_na_liga(user, row_e['codigo']):
-                                st.success(f"🎉 Vinculado à liga '{row_e['nome']}'!")
+                                st.success(f"🎉 Bem vindo à liga '{row_e['nome']}'!")
                                 st.rerun()
                         else:
                             st.error("❌ Código de acesso incorreto!")
-                st.markdown("<hr style='margin:10px 0; border-color:rgba(255,255,255,0.05);'>", unsafe_allow_html=True)
+                st.markdown("<hr style='margin:10px 0; border-color:rgba(75,100,150,0.05);'>", unsafe_allow_html=True)
         else:
             st.info("Nenhuma liga foi criada globalmente ainda.")
 
@@ -560,7 +560,7 @@ else:
             if not jogos_futuros_existentes:
                 st.info("Não há novos jogos agendados para os próximos dias.")
                 
-            st.markdown("<br><hr style='border-color:rgba(255,255,255,0.1);'><br>", unsafe_allow_html=True)
+            st.markdown("<br><hr style='border-color:rgba(75,100,150,0.1);'><br>", unsafe_allow_html=True)
             
             # --- JOGOS ANTERIORES ---
             st.markdown("### 🔒 Jogos Anteriores / Encerrados")
