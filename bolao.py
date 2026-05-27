@@ -310,7 +310,7 @@ if st.session_state.usuario_logado is None:
             sl = st.text_input("Senha:", type="password", key="login_pass")
             manter_logado = st.checkbox("Manter logado neste dispositivo", value=True)
             
-            if st.button("Entrar no Sistema", type="primary"):
+            if st.button("Entrar", type="primary"):
                 if nl == ADMIN_USER and sl == ADMIN_PASS:
                     st.session_state.usuario_logado = "ADMIN"
                     if manter_logado:
@@ -511,7 +511,7 @@ else:
             fuso_br = pytz.timezone('America/Sao_Paulo')
             agora_br = datetime.now(fuso_br).replace(tzinfo=None)
             
-            jogos['ja_comecou'] = agora_br >= jogos['datetime_objeto']
+            jogos['ja_comecou'] = agora_br >= jogos['datetime_convertido']
             
             dias_futuros = jogos[jogos['ja_comecou'] == False]['data_apenas'].unique()
             dias_passados = jogos[jogos['ja_comecou'] == True]['data_apenas'].unique()
