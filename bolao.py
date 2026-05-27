@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Injeção de CSS Moderno
+# Injeção de CSS Moderno corrigindo o bug do contraste das sanfonas (Ajuste #1)
 st.markdown("""
 <style>
 .stApp {
@@ -24,7 +24,22 @@ st.markdown("""
 h1, h2, h3, h4 { color: white !important; }
 p, span, label { color: #E2E8F0 !important; }
 
-/* Estilo dos Cards */
+/* Correção de Contraste para Sanfonas (st.expander) Ativas e Focadas */
+.stExpander {
+    background-color: #151C32 !important;
+    border: 1px solid rgba(255,255,255,0.05) !important;
+    border-radius: 14px !important;
+    margin-bottom: 10px;
+}
+.stExpander:focus-within, .stExpander:focus {
+    background-color: #FFFFFF !important;
+}
+.stExpander:focus-within p, .stExpander:focus-within span, .stExpander:focus-within label,
+.stExpander:focus p, .stExpander:focus span, .stExpander:focus label {
+    color: #0F172A !important;
+}
+
+/* Estilo dos Cards de Palpites */
 .card {
     background: #151C32;
     padding: 20px;
@@ -52,7 +67,6 @@ div[data-testid="metric-container"] { background: #151C32; border-radius: 18px; 
 div[data-testid="stMetricValue"] { font-size: 24px !important; font-weight: bold; }
 div[data-testid="stMetricLabel"] { font-size: 14px !important; color: #A0AEC0 !important; }
 
-/* Rodapé de Créditos */
 .footer {
     text-align: center;
     padding: 20px;
@@ -65,7 +79,7 @@ div[data-testid="stMetricLabel"] { font-size: 14px !important; color: #A0AEC0 !i
 </style>
 """, unsafe_allow_html=True)
 
-# Conexão com Supabase
+# Conexão com Supabase 
 SUPABASE_URL = "https://busfsfrcodfnjgkizfme.supabase.co"
 SUPABASE_KEY = "sb_publishable_tnx9hoG8lqnwvS2Po02GWQ_d9EcB2AL"
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -74,18 +88,20 @@ ADMIN_USER = "Admin"
 ADMIN_PASS = "gazelas123" 
 
 # =========================================================
-# FUNÇÕES DE BANCO DE DADOS (COM CACHE INTELIGENTE DE ALTA PERFORMANCE)
+# FUNÇÕES DE BANCO DE DADOS
 # =========================================================
 
-@st.cache_data(ttl=300)  # Cache de 5 minutos para tabela fixa de jogos
+@st.cache_data(ttl=300)
 def get_jogos():
     res = supabase.table("jogos").select("*").order("data_hora").execute()
     df = pd.DataFrame(res.data)
     if not df.empty:
-        df['data_apenas'] = pd.to_datetime(df['data_hora'].str.replace('T', ' ')).dt.strftime('%d/%m/%Y')
+        df['datetime_convertido'] = pd.to_datetime(df['data_hora'].str.replace('T', ' '))
+        df['data_apenas'] = df['datetime_convertido'].dt.strftime('%d/%m/%Y')
+        df['hora_apenas'] = df['datetime_convertido'].dt.strftime('%H:%M')
     return df
 
-@st.cache_data(ttl=30)  # Cache curto de 30 segundos para a lista global de ligas
+@st.cache_data(ttl=30)
 def get_todas_ligas():
     res = supabase.table("ligas").select("*").order("nome").execute()
     return pd.DataFrame(res.data)
@@ -98,7 +114,7 @@ def verificar_liga_existente(codigo_liga):
 def criar_nova_liga(nome_liga, codigo_liga, usuario_criador):
     cod = codigo_liga.strip().upper()
     supabase.table("ligas").insert({"nome": nome_liga.strip(), "codigo": cod}).execute()
-    st.cache_data.clear() # Limpa o cache para atualizar a lista de ligas imediatamente
+    st.cache_data.clear()
     ingressar_na_liga(usuario_criador, cod)
     return True
 
@@ -114,13 +130,13 @@ def verificar_login(nome, senha):
     res = supabase.table("usuarios").select("*").eq("nome", nome.strip()).eq("senha", senha).execute()
     return len(res.data) > 0
 
-@st.cache_data(ttl=15)  # Cache de 15 segundos para evitar requisições repetidas ao transitar abas
+@st.cache_data(ttl=15)
 def get_ligas_do_usuario(usuario):
     res = supabase.table("membros_liga").select("liga_codigo").eq("usuario_nome", usuario).execute()
     if not res.data: return []
     return [item['liga_codigo'] for item in res.data]
 
-@st.cache_data(ttl=15)  # Evita carregar a tabela intermediária inteira do banco toda hora
+@st.cache_data(ttl=15)
 def get_todos_membros_liga_global():
     res = supabase.table("membros_liga").select("usuario_nome, liga_codigo").execute()
     return pd.DataFrame(res.data)
@@ -129,7 +145,7 @@ def ingressar_na_liga(usuario, codigo_liga):
     cod = codigo_liga.strip().upper()
     try:
         supabase.table("membros_liga").insert({"usuario_nome": usuario, "liga_codigo": cod}).execute()
-        st.cache_data.clear() # Limpa a memória local para exibir a nova liga na hora
+        st.cache_data.clear()
         return True
     except:
         return False
@@ -138,9 +154,9 @@ def salvar_palpite(usuario, jogo_id, p_a, p_b, codigo_liga):
     cod = codigo_liga.strip().upper()
     data = {"usuario": usuario, "jogo_id": jogo_id, "palpite_a": p_a, "palpite_b": p_b, "liga_codigo": cod}
     supabase.table("palpites").upsert(data).execute()
-    st.cache_data.clear() # Reseta o cache para carregar os novos placares atualizados
+    st.cache_data.clear()
 
-@st.cache_data(ttl=10) # Cache ultra veloz de 10 segundos para processamento de palpites do usuário ativo
+@st.cache_data(ttl=10)
 def get_palpites_usuario(usuario, codigo_liga):
     cod = codigo_liga.strip().upper()
     res = supabase.table("palpites").select("*").eq("usuario", usuario).eq("liga_codigo", cod).execute()
@@ -148,7 +164,7 @@ def get_palpites_usuario(usuario, codigo_liga):
         return pd.DataFrame(columns=['usuario', 'jogo_id', 'palpite_a', 'palpite_b', 'liga_codigo'])
     return pd.DataFrame(res.data)
 
-@st.cache_data(ttl=30) # Cache para a aba "Espiar"
+@st.cache_data(ttl=30)
 def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
     cod = codigo_liga.strip().upper()
     res = supabase.table("palpites").select("usuario, palpite_a, palpite_b").eq("jogo_id", jogo_id).eq("liga_codigo", cod).execute()
@@ -158,11 +174,9 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
     df.rename(columns={'usuario': 'Participante', 'palpite_a': 'Gols A', 'palpite_b': 'Gols B'}, inplace=True)
     return df
 
-@st.cache_data(ttl=30) # Cache de 30s no Ranking (Não precisa recalcular contas a cada clique do mouse)
+@st.cache_data(ttl=30)
 def calcular_ranking(codigo_liga):
     cod = codigo_liga.strip().upper()
-    
-    # Processa via cache unificado para não sobrecarregar o Supabase com 3 requisições
     df_membros = get_todos_membros_liga_global()
     membros_filtrados = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
     
@@ -228,7 +242,7 @@ def reset_banco_dados():
     except Exception as e:
         st.error(f"Erro ao resetar banco: {e}")
 
-@st.cache_data(ttl=120) # Cache de 2 minutos para processamento matemático da tabela da Copa
+@st.cache_data(ttl=120)
 def calcular_tabela_copa():
     grupos = {
         'Grupo A': ['🇲🇽 México', '🇿🇦 África do Sul', '🇰🇷 Coreia do Sul', '🇨🇿 República Tcheca'],
@@ -244,16 +258,13 @@ def calcular_tabela_copa():
         'Grupo K': ['🇵🇹 Portugal', '🇨🇩 Congo', '🇺🇿 Uzbequistão', '🇨🇴 Colômbia'],
         'Grupo L': ['🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra', '🇭🇷 Croácia', '🇬🇭 Gana', '🇵🇦 Panamá']
     }
-    # Carrega dados locais filtrando a tabela de jogos em cache
     jogos_df = get_jogos()
     if jogos_df.empty: return pd.DataFrame()
-    
     jogos_realizados = jogos_df[jogos_df['gols_a'].notnull()]
     tabela = {}
     for grupo, times in grupos.items():
         for time in times:
             tabela[time] = {'Grupo': grupo, 'Time': time, 'Pts': 0, 'J': 0, 'V': 0, 'E': 0, 'D': 0, 'GP': 0, 'GC': 0, 'SG': 0}
-            
     if not jogos_realizados.empty:
         for _, j in jogos_realizados.iterrows():
             ta, tb = j['time_a'], j['time_b']; ga, gb = int(j['gols_a']), int(j['gols_b'])
@@ -270,12 +281,20 @@ def calcular_tabela_copa():
     return pd.DataFrame(list(tabela.values()))
 
 # =========================================================
-# HEADER E SESSÕES
+# GERENCIADOR DE SESSÃO E COOKIES (Ajuste #3 - MANTER LOGADO)
 # =========================================================
 st.markdown("<div style='text-align:center;'><h1>⚽ GAZELAS BET</h1></div>", unsafe_allow_html=True)
 
 if 'usuario_logado' not in st.session_state: st.session_state.usuario_logado = None
 if 'liga_ativa' not in st.session_state: st.session_state.liga_ativa = None
+
+# Mecanismo de persistência simples em nível de session local para o Rerun
+if st.session_state.usuario_logado is None and "cookie_user" in st.query_params:
+    cookie_u = st.query_params["cookie_user"]
+    if cookie_u == "ADMIN":
+        st.session_state.usuario_logado = "ADMIN"
+    else:
+        st.session_state.usuario_logado = cookie_u
 
 # =========================================================
 # FLUXO 1: DESLOGADO
@@ -289,12 +308,18 @@ if st.session_state.usuario_logado is None:
         with aba_login:
             nl = st.text_input("Usuário:", key="login_user")
             sl = st.text_input("Senha:", type="password", key="login_pass")
+            manter_logado = st.checkbox("Manter logado neste dispositivo", value=True)
+            
             if st.button("Entrar no Sistema", type="primary"):
                 if nl == ADMIN_USER and sl == ADMIN_PASS:
                     st.session_state.usuario_logado = "ADMIN"
+                    if manter_logado:
+                        st.query_params["cookie_user"] = "ADMIN"
                     st.rerun()
                 elif verificar_login(nl, sl):
                     st.session_state.usuario_logado = nl
+                    if manter_logado:
+                        st.query_params["cookie_user"] = nl
                     st.rerun()
                 else: 
                     st.error("❌ Usuário ou senha incorretos!")
@@ -320,6 +345,8 @@ elif st.session_state.usuario_logado == "ADMIN":
     st.error("🤖 MESTRE GLOBAL — PAINEL DE CONTROLE SUPREMO")
     if st.button("Sair do Modo Admin"):
         st.session_state.usuario_logado = None
+        if "cookie_user" in st.query_params:
+            del st.query_params["cookie_user"]
         st.rerun()
         
     jogos = get_jogos()
@@ -379,7 +406,7 @@ elif st.session_state.usuario_logado == "ADMIN":
             st.rerun()
 
 # =========================================================
-# FLUXO 3: LOGADO - PAINEL SANFONADO DE LIGAS (OTIMIZADO)
+# FLUXO 3: LOGADO - PAINEL SANFONADO DE LIGAS
 # =========================================================
 elif st.session_state.liga_ativa is None:
     user = st.session_state.usuario_logado
@@ -387,16 +414,17 @@ elif st.session_state.liga_ativa is None:
     col_u.write(f"👋 Olá, **{user}**!")
     if col_s.button("Sair"):
         st.session_state.usuario_logado = None
+        if "cookie_user" in st.query_params:
+            del st.query_params["cookie_user"]
         st.rerun()
         
     st.subheader("🏆 Minhas Ligas & Grupos")
     st.write("Dispute o primeiro lugar do ranking de pontos com seus amigos.")
     
-    # Cache unificado de membros locais para matar a lentidão da contagem
     df_membros_cached = get_todos_membros_liga_global()
     
     # 1. SANFONA: MINHAS LIGAS
-    with st.expander (("📁 Minhas Ligas"), expanded=True):
+    with st.expander("📁 Minhas Ligas (Onde estou participando)", expanded=True):
         codigos_usuario = get_ligas_do_usuario(user)
         df_todas = get_todas_ligas()
         
@@ -411,7 +439,7 @@ elif st.session_state.liga_ativa is None:
             st.info("Você ainda não entrou em nenhuma liga clássica. Entre ou crie uma abaixo!")
 
     # 2. SANFONA: LIGAS EXISTENTES
-    with st.expander("🔍 Ligas Existentes"):
+    with st.expander("🔍 Ligas Existentes no Banco (Descobrir e Entrar)"):
         df_todas = get_todas_ligas()
         codigos_usuario = get_ligas_do_usuario(user)
         
@@ -420,7 +448,6 @@ elif st.session_state.liga_ativa is None:
                 if row_e['codigo'] in codigos_usuario:
                     st.write(f"🟢 **{row_e['nome']}** — Você já participa deste grupo!")
                 else:
-                    # Conta localmente via pandas na memória (Sem ir no banco!)
                     count_membros = len(df_membros_cached[df_membros_cached['liga_codigo'] == row_e['codigo']]) if not df_membros_cached.empty else 0
                     st.write(f"🔹 **{row_e['nome']}** — {count_membros} participantes")
                     c_txt, c_btn = st.columns([3, 1])
@@ -440,10 +467,10 @@ elif st.session_state.liga_ativa is None:
             st.info("Nenhuma liga foi criada globalmente ainda.")
 
     # 3. SANFONA: CRIAR LIGA
-    with st.expander("➕ Criar Nova Liga"):
-        n_liga = st.text_input("Nome da Liga (Ex:Fatec):")
-        c_liga = st.text_input("Código Customizado da Liga (Ex: Fatec2026):")
-        if st.button("Registrar Liga"):
+    with st.expander("➕ Criar Nova Liga Clássica"):
+        n_liga = st.text_input("Nome da Liga (Ex: Cartoleiros da FATEC):")
+        c_liga = st.text_input("Código Customizado da Liga (Ex: COPA99):")
+        if st.button("Registrar Liga Clássica"):
             if n_liga and c_liga:
                 if verificar_liga_existente(c_liga):
                     st.error("🚨 Esse código já existe! Escolha outro código de acesso.")
@@ -455,7 +482,7 @@ elif st.session_state.liga_ativa is None:
                 st.warning("Preencha todos os campos para fundar a liga.")
 
 # =========================================================
-# FLUXO 4: DENTRO DE UMA LIGA ATIVA (MÁXIMA VELOCIDADE)
+# FLUXO 4: DENTRO DE UMA LIGA ATIVA
 # =========================================================
 else:
     user = st.session_state.usuario_logado
@@ -476,7 +503,7 @@ else:
 
     tab1, tab2, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras"])
 
-    # 1. PALPITES (INTELIGENTE COM TRIAGEM DE TEMPO E FLUXO OTIMIZADO)
+    # 1. PALPITES (Ajuste #2 - EXIBIÇÃO CLARA DE HORÁRIO E HORÁRIO DA TRAVA)
     with tab1:
         if not jogos.empty:
             p_u = get_palpites_usuario(user, liga)
@@ -484,14 +511,12 @@ else:
             fuso_br = pytz.timezone('America/Sao_Paulo')
             agora_br = datetime.now(fuso_br).replace(tzinfo=None)
             
-            # Divide usando processamento local ultrarrápido em Pandas
-            jogos['datetime_objeto'] = pd.to_datetime(jogos['data_hora'].str.replace('T', ' '))
             jogos['ja_comecou'] = agora_br >= jogos['datetime_objeto']
             
             dias_futuros = jogos[jogos['ja_comecou'] == False]['data_apenas'].unique()
             dias_passados = jogos[jogos['ja_comecou'] == True]['data_apenas'].unique()
             
-            # --- JOGOS FUTUROS (ABERTOS NO TOPO) ---
+            # --- JOGOS FUTUROS ---
             st.markdown("### 🔥 Próximos Jogos")
             jogos_futuros_existentes = False
             
@@ -502,7 +527,15 @@ else:
                     with st.expander(f"📅 Jogos de {dia} — Abertos", expanded=True):
                         for _, j in jogos_do_dia.iterrows():
                             st.markdown("<div class='card'>", unsafe_allow_html=True)
-                            st.caption(f"🏆 {j.get('fase', 'Fase de Grupos')}")
+                            
+                            # Ajuste #2: Linha visual explícita com horário do jogo e o travamento do bolão
+                            st.markdown(f"""
+                            <div style='display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px;'>
+                                <span style='color: #00E676;'>🏆 {j.get('fase', 'Fase de Grupos')}</span>
+                                <span style='color: #A0AEC0;'>🕒 Início: <b>{j['hora_apenas']}</b> (Horário de Brasília)</span>
+                                <span style='color: #FFB300;'>🔒 Fecha às: <b>{j['hora_apenas']}</b></span>
+                            </div>
+                            """, unsafe_allow_html=True)
                             
                             p_at = p_u[p_u['jogo_id'] == j['id']]
                             ja_palpitou = not p_at.empty
@@ -529,7 +562,7 @@ else:
                 
             st.markdown("<br><hr style='border-color:rgba(255,255,255,0.1);'><br>", unsafe_allow_html=True)
             
-            # --- JOGOS ANTERIORES (ENCERRADOS EMBAIXO) ---
+            # --- JOGOS ANTERIORES ---
             st.markdown("### 🔒 Jogos Anteriores / Encerrados")
             if len(dias_passados) > 0:
                 with st.expander("📁 Visualizar histórico de jogos encerrados nesta liga"):
@@ -539,7 +572,13 @@ else:
                             st.markdown(f"<div style='color:#A0AEC0; font-weight:bold; padding: 5px 0;'>📅 Rodada de {dia}</div>", unsafe_allow_html=True)
                             for _, j in jogos_do_dia_passado.iterrows():
                                 st.markdown("<div class='card' style='opacity: 0.75;'>", unsafe_allow_html=True)
-                                st.caption(f"🔒 {j.get('fase', 'Fase de Grupos')} — Encerrado")
+                                
+                                st.markdown(f"""
+                                <div style='display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;'>
+                                    <span style='color: #94A3B8;'>🔒 {j.get('fase', 'Fase de Grupos')}</span>
+                                    <span style='color: #EF4444;'>⏱️ Iniciado às {j['hora_apenas']} (Cadeado trancado)</span>
+                                </div>
+                                """, unsafe_allow_html=True)
                                 
                                 p_at = p_u[p_u['jogo_id'] == j['id']]
                                 ja_palpitou = not p_at.empty
@@ -562,9 +601,9 @@ else:
             else:
                 st.info("Nenhum jogo foi encerrado até o momento.")
 
-    # 2. RANKING COMPACTO
+    # 2. RANKING
     with tab2:
-        st.subheader("🏆 Classificação da Liga Clássica")
+        st.subheader("🏆 Classification da Liga Clássica")
         if not ranking.empty:
             df_visual = ranking.copy()
             df_visual.insert(0, 'Posição', range(1, len(df_visual) + 1))
