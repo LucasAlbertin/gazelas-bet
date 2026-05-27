@@ -14,7 +14,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Injeção de CSS Moderno corrigindo o bug do contraste das sanfonas (Ajuste #1)
+# Injeção de CSS Moderno com as Sanfonas e Cores Travadas
 st.markdown("""
 <style>
 .stApp {
@@ -24,21 +24,51 @@ st.markdown("""
 h1, h2, h3, h4 { color: white !important; }
 p, span, label { color: #E2E8F0 !important; }
 
-/* Correção de Contraste para Sanfonas (st.expander) Ativas e Focadas */
+/* ==========================================
+   SANFONAS (ABERTAS E FECHADAS)
+   ========================================== */
 .stExpander {
     background-color: #151C32 !important;
-    border: 1px solid rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
     border-radius: 14px !important;
-    margin-bottom: 10px;
-}
-.stExpander:focus-within, .stExpander:focus {
-    background-color: #FFFFFF !important;
-}
-.stExpander:focus-within p, .stExpander:focus-within span, .stExpander:focus-within label,
-.stExpander:focus p, .stExpander:focus span, .stExpander:focus label {
-    color: #0F172A !important;
+    margin-bottom: 12px;
 }
 
+/* Força o fundo a continuar escuro mesmo quando focada, aberta ou clicada */
+.stExpander:focus-within, 
+.stExpander:focus, 
+.stExpander:hover,
+.stExpander[data-expanded="true"] {
+    background-color: #151C32 !important;
+    border: 1px solid rgba(0, 230, 118, 0.4) !important; /* Adiciona uma borda sutil verde neon ao selecionar */
+}
+
+/* Garante que o texto de dentro NUNCA fique escuro/invisível */
+.stExpander p, 
+.stExpander span, 
+.stExpander label, 
+.stExpander svg,
+.stExpander:focus-within p, 
+.stExpander:focus-within span, 
+.stExpander:focus-within label,
+.stExpander:focus p, 
+.stExpander:focus span, 
+.stExpander:focus label {
+    color: #E2E8F0 !important;
+    fill: #E2E8F0 !important;
+}
+
+/* Força especificamente o título da sanfona a ser sempre branco */
+.stExpander summary text,
+.stExpander summary p,
+.stExpander summary span {
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+}
+
+/* ==========================================
+   RESTANTE DOS COMPONENTES VISUAIS
+   ========================================== */
 /* Estilo dos Cards de Palpites */
 .card {
     background: #151C32;
