@@ -439,7 +439,7 @@ elif st.session_state.liga_ativa is None:
             st.info("Você ainda não entrou em nenhuma liga clássica. Entre ou crie uma abaixo!")
 
     # 2. SANFONA: LIGAS EXISTENTES
-    with st.expander("🔍 Ligas Existentes no Banco (Descobrir e Entrar)"):
+    with st.expander("🔍 Ligas Existentes"):
         df_todas = get_todas_ligas()
         codigos_usuario = get_ligas_do_usuario(user)
         
@@ -565,7 +565,7 @@ else:
             # --- JOGOS ANTERIORES ---
             st.markdown("### 🔒 Jogos Anteriores / Encerrados")
             if len(dias_passados) > 0:
-                with st.expander("📁 Visualizar histórico de jogos encerrados nesta liga"):
+                with st.expander("📁 Visualizar histórico de jogos encerrados"):
                     for dia in reversed(dias_passados):
                         jogos_do_dia_passado = jogos[(jogos['data_apenas'] == dia) & (jogos['ja_comecou'] == True)]
                         if not jogos_do_dia_passado.empty:
