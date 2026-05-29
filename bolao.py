@@ -318,7 +318,7 @@ def calcular_tabela_copa():
     return pd.DataFrame(list(tabela.values()))
 
 # =========================================================
-# GERENCIADOR DE SESSÃO E COOKIES (Ajuste #3 - MANTER LOGADO)
+# GERENCIADOR DE SESSÃO E COOKIES
 # =========================================================
 st.markdown("<div style='text-align:center;'><h1>⚽ GAZELAS BET</h1></div>", unsafe_allow_html=True)
 
@@ -401,7 +401,7 @@ elif st.session_state.usuario_logado == "ADMIN":
                     st.rerun()
                     
     # =========================================================
-    # AQUI ENTRA O BLOCO NOVO SUBISTITUINDO O ANTIGO GERENCIADOR DE LIGAS:
+    # GERENCIADOR DE LIGAS E USUARIOS
     # =========================================================
     with st.expander("🏆 Gerenciar Ligas Ativas & Membros"):
         df_ligas = get_todas_ligas()
@@ -434,10 +434,6 @@ elif st.session_state.usuario_logado == "ADMIN":
                         st.caption("ℹ️ Nenhum participante ingressou nesta liga ainda.")
                 
                 st.markdown("<hr style='margin:15px 0; border-color:rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
-
-    # Daqui para baixo continua o restante do painel do Admin (Resultados dos Jogos, etc.)
-    st.write("📊 **Resultados dos Jogos:**")
-    # ... resto do código igual ...
 
     st.write("📊 **Resultados dos Jogos:**")
     if not jogos.empty:
