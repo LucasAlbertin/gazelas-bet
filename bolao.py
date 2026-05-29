@@ -248,6 +248,13 @@ def deletar_liga(cod_liga):
     supabase.table("ligas").delete().eq("codigo", cod_liga).execute()
     st.cache_data.clear()
 
+def remover_membro_da_liga(usuario_nome, cod_liga):
+    # Remove o vínculo do usuário com aquela liga específica
+    supabase.table("membros_liga").delete().eq("usuario_nome", usuario_nome).eq("liga_codigo", cod_liga).execute()
+    # Também limpa os palpites que ele fez especificamente dentro dessa liga para não poluir o banco
+    supabase.table("palpites").delete().eq("usuario", usuario_nome).eq("liga_codigo", cod_liga).execute()
+    st.cache_data.clear()
+
 def deletar_jogo(jogo_id):
     supabase.table("palpites").delete().eq("jogo_id", jogo_id).execute()
     supabase.table("jogos").delete().eq("id", jogo_id).execute()
@@ -381,6 +388,7 @@ elif st.session_state.usuario_logado == "ADMIN":
         
     jogos = get_jogos()
     
+    # 1. Sanfona de Usuários Globais (Pode deixar como estava)
     with st.expander("👥 Gerenciar Contas de Jogadores"):
         df_usuarios = get_todos_usuarios_global()
         if not df_usuarios.empty:
@@ -392,16 +400,44 @@ elif st.session_state.usuario_logado == "ADMIN":
                     deletar_usuario(row_u['nome'])
                     st.rerun()
                     
-    with st.expander("🏆 Gerenciar Ligas Ativas"):
+    # =========================================================
+    # AQUI ENTRA O BLOCO NOVO SUBISTITUINDO O ANTIGO GERENCIADOR DE LIGAS:
+    # =========================================================
+    with st.expander("🏆 Gerenciar Ligas Ativas & Membros"):
         df_ligas = get_todas_ligas()
+        df_membros_todos = get_todos_membros_liga_global()
+        
         if not df_ligas.empty:
             for _, row_l in df_ligas.iterrows():
+                cod_l = row_l['codigo']
+                
                 c_l1, c_l2, c_l3 = st.columns([3, 3, 1])
-                c_l1.write(f"🔹 {row_l['nome']}")
-                c_l2.write(f"Código: `{row_l['codigo']}`")
-                if c_l3.button("Apagar", key=f"del_liga_{row_l['codigo']}"):
-                    deletar_liga(row_l['codigo'])
+                c_l1.markdown(f"### 🔹 {row_l['nome']}")
+                c_l2.markdown(f"Código: `{cod_l}`")
+                if c_l3.button("Apagar Liga", key=f"del_liga_{cod_l}"):
+                    deletar_liga(cod_l)
                     st.rerun()
+                
+                if not df_membros_todos.empty:
+                    membros_da_liga = df_membros_todos[df_membros_todos['liga_codigo'] == cod_l]['usuario_nome'].tolist()
+                    
+                    if membros_da_liga:
+                        st.write(f"👥 **Membros activos ({len(membros_da_liga)}):**")
+                        for membro in membros_da_liga:
+                            col_m1, col_m2 = st.columns([5, 2])
+                            col_m1.write(f"👉 {membro}")
+                            if col_m2.button("Remover da Liga", key=f"kick_{membro}_{cod_l}"):
+                                remover_membro_da_liga(membro, cod_l)
+                                st.success(f"👤 {membro} foi removido da liga com sucesso!")
+                                st.rerun()
+                    else:
+                        st.caption("ℹ️ Nenhum participante ingressou nesta liga ainda.")
+                
+                st.markdown("<hr style='margin:15px 0; border-color:rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
+
+    # Daqui para baixo continua o restante do painel do Admin (Resultados dos Jogos, etc.)
+    st.write("📊 **Resultados dos Jogos:**")
+    # ... resto do código igual ...
 
     st.write("📊 **Resultados dos Jogos:**")
     if not jogos.empty:
