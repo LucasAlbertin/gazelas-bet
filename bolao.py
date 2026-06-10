@@ -159,8 +159,11 @@ def criar_usuario(nome, senha):
         return False
 
 def verificar_login(nome, senha):
-    nome_limpo = nome.strip().lower()
-    res = supabase.table("usuarios").select("*").eq("nome", nome_limpo).eq("senha", senha).execute()
+    # O .strip() remove espaços invisíveis bobos que as pessoas digitam sem querer
+    nome_limpo = nome.strip()
+    
+    # O .ilike faz o banco procurar o nome ignorando se a letra é maiúscula ou minúscula
+    res = supabase.table("usuarios").select("*").ilike("nome", nome_limpo).eq("senha", senha).execute()
     return len(res.data) > 0
 
 @st.cache_data(ttl=15)
