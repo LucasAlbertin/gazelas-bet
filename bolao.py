@@ -551,8 +551,7 @@ elif st.session_state.liga_ativa is None:
                     count_membros = len(df_membros_cached[df_membros_cached['liga_codigo'] == row_e['codigo']]) if not df_membros_cached.empty else 0
                     st.write(f"🔹 **{row_e['nome']}** — {count_membros} participantes")
                     c_txt, c_btn = st.columns([3, 1])
-                    pass_liga = c_txt.text_input("Senha/Código de Acesso:", key=f"input_pass_{row_e['codigo']}", placeholder=\"Digite o código da liga...\", label_visibility=\"collapsed\")
-                    
+                    pass_liga = c_txt.text_input("Senha/Código de Acesso:", key=f"input_pass_{row_e['codigo']}", placeholder="Digite o código da liga...", label_visibility="collapsed")                    
                     if c_btn.button("Ingressar", key=f"btn_ingres_{row_e['codigo']}"):
                         if not pass_liga:
                             st.warning("Digite o código para entrar!")
