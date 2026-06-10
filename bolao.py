@@ -150,14 +150,17 @@ def criar_nova_liga(nome_liga, codigo_liga, usuario_criador):
 
 def criar_usuario(nome, senha):
     try:
-        supabase.table("usuarios").insert({"nome": nome.strip(), "senha": senha}).execute()
+        # Força o nome a salvar sem espaços e tudo em minúsculo
+        nome_limpo = nome.strip().lower()
+        supabase.table("usuarios").insert({"nome": nome_limpo, "senha": senha}).execute()
         st.cache_data.clear()
         return True
     except:
         return False
 
 def verificar_login(nome, senha):
-    res = supabase.table("usuarios").select("*").eq("nome", nome.strip()).eq("senha", senha).execute()
+    nome_limpo = nome.strip().lower()
+    res = supabase.table("usuarios").select("*").eq("nome", nome_limpo).eq("senha", senha).execute()
     return len(res.data) > 0
 
 @st.cache_data(ttl=15)
@@ -182,7 +185,8 @@ def ingressar_na_liga(usuario, codigo_liga):
 
 def salvar_palpite(usuario, jogo_id, p_a, p_b, codigo_liga):
     cod = codigo_liga.strip().upper()
-    data = {"usuario": usuario, "jogo_id": jogo_id, "palpite_a": p_a, "palpite_b": p_b, "liga_codigo": cod}
+    nome_limpo = usuario.strip().lower() # Garante que o palpite case com o usuário do banco
+    data = {"usuario": nome_limpo, "jogo_id": jogo_id, "palpite_a": p_a, "palpite_b": p_b, "liga_codigo": cod}
     supabase.table("palpites").upsert(data).execute()
     st.cache_data.clear()
 
