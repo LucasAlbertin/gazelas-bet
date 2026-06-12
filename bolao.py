@@ -161,6 +161,30 @@ def criar_usuario(nome, senha):
     except:
         return False
 
+def atualizar_dados_usuario(nome_atual, novo_nome, nova_senha):
+    nome_atual_limpo = nome_atual.strip()
+    novo_nome_limpo = novo_nome.strip()
+    
+    # 1. Se o nome mudou, verifica se o novo nome já está ocupado por outro usuário
+    if nome_atual_limpo.lower() != novo_nome_limpo.lower():
+        res = supabase.table("usuarios").select("nome").ilike("nome", novo_nome_limpo).execute()
+        if len(res.data) > 0:
+            return False, "🚨 Esse novo nome de usuário já está sendo usado!"
+
+    try:
+        # 2. Atualiza a tabela de usuários
+        supabase.table("usuarios").update({"nome": novo_nome_limpo, "senha": nova_senha}).eq("nome", nome_atual_limpo).execute()
+        
+        # 3. Se mudou o nome, precisamos atualizar as tabelas relacionadas para não quebrar o banco
+        if nome_atual_limpo != novo_nome_limpo:
+            supabase.table("membros_liga").update({"usuario_nome": novo_nome_limpo}).eq("usuario_nome", nome_atual_limpo).execute()
+            supabase.table("palpites").update({"usuario": novo_nome_limpo}).eq("usuario", nome_atual_limpo).execute()
+            
+        st.cache_data.clear()
+        return True, "✅ Dados atualizados com sucesso! Faça login novamente para aplicar."
+    except Exception as e:
+        return False, f"❌ Erro ao atualizar no banco: {e}"
+
 def verificar_login(nome, senha):
     nome_limpo = nome.strip()
     res = supabase.table("usuarios").select("*").ilike("nome", nome_limpo).eq("senha", senha).execute()
@@ -539,7 +563,7 @@ elif st.session_state.liga_ativa is None:
         else:
             st.info("Você ainda não entrou em nenhuma liga clássica. Entre ou crie uma abaixo!")
 
-    with st.expander("🔍 Ligas Existentes no Banco (Descobrir e Entrar)"):
+    with st.expander("🔍 Ligas Existentes no Banco"):
         df_todas = get_todas_ligas()
         codigos_usuario = get_ligas_do_usuario(user)
         
@@ -578,6 +602,31 @@ elif st.session_state.liga_ativa is None:
                     st.rerun()
             else:
                 st.warning("Preencha todos os campos para fundar a liga.")
+
+    with st.expander("⚙️ Configurações da Conta (Alterar Nome ou Senha)"):
+        st.markdown("<p style='font-size:13px; color:#A0AEC0;'>Deseja alterar seus dados de acesso? Preencha os campos abaixo:</p>", unsafe_allow_html=True)
+        
+        # Busca a senha atual dele no banco para exibir no campo (facilita para ele ver o que já tem)
+        res_u = supabase.table("usuarios").select("senha").eq("nome", user).execute()
+        senha_atual = res_u.data[0]['senha'] if res_u.data else ""
+        
+        novo_nome_input = st.text_input("Seu Nome de Usuário:", value=user, key="edit_profile_name")
+        nova_senha_input = st.text_input("Sua Senha:", value=senha_atual, type="password", key="edit_profile_pass")
+        
+        if st.button("Salvar Alterações de Cadastro", type="secondary"):
+            if novo_nome_input and nova_senha_input:
+                sucesso, mensagem = atualizar_dados_usuario(user, novo_nome_input, nova_senha_input)
+                if sucesso:
+                    st.success(mensagem)
+                    # Força o logout para o usuário logar com as novas credenciais e renovar os cookies
+                    st.session_state.usuario_logado = None
+                    if "cookie_user" in st.query_params:
+                        del st.query_params["cookie_user"]
+                    st.rerun()
+                else:
+                    st.error(mensagem)
+            else:
+                st.warning("Os campos não podem ficar vazios!")
 
 # =========================================================
 # FLUXO 4: INTERIOR DE UMA LIGA SELECIONADA
