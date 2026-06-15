@@ -243,7 +243,8 @@ def calcular_ranking(codigo_liga):
     df_membros = get_todos_membros_liga_global()
     membros_filtrados = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
     
-    jogos_res = supabase.table("jogos").select("id, gols_a, gols_b").not_.is_("gols_a", "null").execute()
+    # TRAVA DEFINITIVA: Busca APENAS os jogos que já possuem resultado real preenchido (não nulos)
+    jogos_res = supabase.table("jogos").select("id, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
     
     pontos = {m: 0 for m in membros_filtrados}
@@ -252,11 +253,19 @@ def calcular_ranking(codigo_liga):
     for p in palpites_res.data:
         if p['jogo_id'] in jogos_dict:
             j = jogos_dict[p['jogo_id']]
+            
+            # Garantia absoluta de que ra e rb possuem números reais validados pelo Admin
             pa, pb = int(p['palpite_a']), int(p['palpite_b'])
             ra, rb = int(j['gols_a']), int(j['gols_b'])
+            
             pts = 0
-            if pa == ra and pb == rb: pts = 3
-            elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb): pts = 1
+            # 1. Acertou em cheio o placar (3 pontos)
+            if pa == ra and pb == rb: 
+                pts = 3
+            # 2. Acertou a tendência do jogo: vitória de A, vitória de B ou o empate (1 ponto)
+            elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb): 
+                pts = 1
+                
             if p['usuario'] in pontos: 
                 pontos[p['usuario']] += pts
                 
