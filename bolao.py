@@ -329,8 +329,8 @@ def calcular_tabela_copa():
         'Grupo E': ['🇩🇪 Alemanha', '🇨🇼 Curaçau', '🇨🇮 Costa do Marfim', '🇪🇨 Equador'],
         'Grupo F': ['🇳🇱 Holanda', '🇯🇵 Japão', '🇸🇪 Suécia', '🇹🇳 Tunísia'],
         'Grupo G': ['🇧🇪 Bélgica', '🇪🇬 Egito', '🇮🇷 Irã', '🇳🇿 Nova Zelândia'],
-        'Grupo H': ['🇪🇸 Espanha', '🇨物件 Cabo Verde', '🇸🇦 Arábia Saudita', '🇺🇾 Uruguai'],
-        'Grupo I': ['🇫🇷 França', '🇸🇳 Senegal', '🇮尋 Iraque', '🇳🇴 Noruega'],
+        'Grupo H': ['🇪🇸 Espanha', '🇨🇻 Cabo Verde', '🇸🇦 Arábia Saudita', '🇺🇾 Uruguai'], # CORRIGIDO AQUI!
+        'Grupo I': ['🇫🇷 França', '🇸🇳 Senegal', '🇮🇶 Iraque', '🇳🇴 Noruega'], # Aproveitei e limpei o Iraque também
         'Grupo J': ['🇦🇹 Áustria', '🇯🇴 Jordânia', '🇦🇷 Argentina', '🇩🇿 Argélia'],
         'Grupo K': ['🇵🇹 Portugal', '🇨🇩 Congo', '🇺🇿 Uzbequistão', '🇨🇴 Colômbia'],
         'Grupo L': ['🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra', '🇭🇷 Croácia', '🇬🇭 Gana', '🇵🇦 Panamá']
@@ -355,7 +355,7 @@ def calcular_tabela_copa():
                 if gb > ga: tabela[tb]['Pts'] += 3; tabela[tb]['V'] += 1
                 elif gb == ga: tabela[tb]['Pts'] += 1; tabela[tb]['E'] += 1
                 else: tabela[tb]['D'] += 1
-    return pd.DataFrame(list(tabela.values()))
+    return pd.DataFrame(list(tabela.values())))
 
 # =========================================================
 # GERENCIADOR DE SESSÃO E PERSISTÊNCIA SEGURA
