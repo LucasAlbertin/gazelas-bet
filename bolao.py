@@ -372,7 +372,7 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()
     ) if not df_membros.empty else set()
 
-    jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
+    jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b, data_hora").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
     jogos_dict = {}
@@ -421,7 +421,12 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             pts = 1
             motivo = "👍 Acertou Tendência (1 pt)"
 
+        # Guarda o datetime real (para ordenar) e a versão formatada (para exibir)
+        data_ordenavel = pd.to_datetime(str(j.get('data_hora', '')).replace('T', ' '), errors='coerce')
+
         detalhes.append({
+            "_data_ordenavel": data_ordenavel,
+            "Data": data_ordenavel.strftime('%d/%m/%Y %H:%M') if pd.notnull(data_ordenavel) else "?",
             "Jogador": usuario_p,
             "Partida": f"{j['time_a']} x {j['time_b']}",
             "Palpite": f"{pa} x {pb}",
@@ -430,6 +435,11 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             "Critério": motivo,
             "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO"
         })
+
+    # Ordena do jogo mais antigo para o mais recente, para ninguém se perder
+    detalhes.sort(key=lambda d: (d["_data_ordenavel"] is pd.NaT, d["_data_ordenavel"]))
+    for d in detalhes:
+        del d["_data_ordenavel"]
 
     return {
         "detalhes": detalhes,
@@ -990,7 +1000,7 @@ else:
     # 3. VAR — RECONTAGEM E CONFERÊNCIA DE PONTOS
     with tab_var:
         st.subheader("🔍 VAR — Conferência de Pontos")
-        st.caption("Veja exatamente como cada ponto seu foi (ou não foi) contado, jogo a jogo.")
+        st.caption("Veja exatamente como cada ponto seu foi (ou não foi) contado. Jogos listados em ordem cronológica, do mais antigo para o mais recente, para ninguém se perder.")
 
         diag_proprio = obter_diagnostico_pontos(liga, usuario_filtro=user)
 
