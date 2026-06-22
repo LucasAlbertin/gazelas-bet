@@ -676,7 +676,7 @@ else:
                 dados_auditoria = []
 
                 # Varre palpite por palpite fazendo a matemática ao vivo na tela
-                for p in \p_res.data if 'palpites_res' in locals() else palpites_res.data:
+                for p in palpites_res.data:
                     j_id = str(p['jogo_id'])
                     if j_id in jogos_dict:
                         j = jogos_dict[j_id]
