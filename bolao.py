@@ -288,25 +288,19 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
 
 @st.cache_data(ttl=30)
 def calcular_ranking(codigo_liga):
-    """Calcula o ranking de pontos de uma liga.
-
-    Esta função tem duas camadas de proteção contra os bugs que já
-    causaram pontuação incorreta no passado:
-
-    1. Normaliza jogo_id para int em ambos os lados (jogos e palpites),
-       evitando que uma comparação "5" == 5 falhe silenciosamente.
-    2. Ignora um segundo palpite do mesmo usuário para o mesmo jogo
-       (proteção contra linhas duplicadas herdadas de upserts antigos
-       sem unique constraint). A correção definitiva é aplicar a
-       constraint única no banco — ver `salvar_palpite`.
-    """
+    """Calcula o ranking de pontos de uma liga de forma blindada contra caixa alta/baixa."""
     cod = codigo_liga.strip().upper()
     df_membros = get_todos_membros_liga_global()
-    membros_filtrados = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
+    
+    # Cria a lista de membros oficiais normalizada em MAIÚSCULO
+    membros_filtrados = []
+    if not df_membros.empty:
+        membros_filtrados = [str(m).strip().upper() for m in df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()]
 
     jogos_res = supabase.table("jogos").select("id, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
+    # O dicionário interno do Python agora trabalha com chaves em MAIÚSCULO
     pontos = {m: 0 for m in membros_filtrados}
 
     jogos_dict = {}
@@ -319,10 +313,12 @@ def calcular_ranking(codigo_liga):
 
     for p in palpites_res.data:
         jogo_id_norm = to_int_seguro(p['jogo_id'])
-        if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
+        user_norm = str(p['usuario']).strip().upper() # Normaliza o usuário do palpite
+
+        if juego_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
-        chave_unica = (p['usuario'], jogo_id_norm)
+        chave_unica = (user_norm, jogo_id_norm)
         if chave_unica in palpites_vistos:
             continue
         palpites_vistos.add(chave_unica)
@@ -343,12 +339,19 @@ def calcular_ranking(codigo_liga):
         elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
             pts = 1
 
-        if p['usuario'] in pontos:
-            pontos[p['usuario']] += pts
+        if user_norm in pontos:
+            pontos[user_norm] += pts
 
-    df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
+    # Reconverte os nomes para exibição na tabela mantendo o formato original capitalizado
+    df_membros_nomes = df_membros[df_membros['liga_codigo'] == cod] if not df_membros.empty else pd.DataFrame()
+    mapa_nomes = {str(row['usuario_nome']).strip().upper(): row['usuario_nome'] for _, row in df_membros_nomes.iterrows()} if not df_membros_nomes.empty else {}
+    
+    pontos_finais = {mapa_nomes.get(m, m): pts for m, pts in pontos.items()}
+
+    df = pd.DataFrame(list(pontos_finais.items()), columns=['Participante', 'Points_Tmp']).rename(columns={'Points_Tmp': 'Pontos'})
+    df = df.sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
-
+    
 def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
     """Gera o detalhamento jogo-a-jogo usado pela aba VAR.
 
