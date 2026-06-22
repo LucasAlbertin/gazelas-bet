@@ -315,7 +315,7 @@ def calcular_ranking(codigo_liga):
         jogo_id_norm = to_int_seguro(p['jogo_id'])
         user_norm = str(p['usuario']).strip().upper() # Normaliza o usuário do palpite
 
-        if juego_id_norm is None or jogo_id_norm not in jogos_dict:
+        if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
         chave_unica = (user_norm, jogo_id_norm)
