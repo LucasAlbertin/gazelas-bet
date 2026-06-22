@@ -652,12 +652,82 @@ else:
         
     st.write(f"👤 Jogador: **{user}** | 🛡️ Liga Ativa: **{liga}**")
     
+    # Exibição do painel de métricas no topo
     c1, c2, c3 = st.columns(3)
     c1.metric("👥 Jogadores no Grupo", len(ranking))
     c2.metric("⚽ Jogos Ativos", len(jogos))
     c3.metric("🏆 Líder da Liga", ranking.iloc[0]['Participante'] if not ranking.empty else "-")
 
+    # =========================================================
+    # 🔍 PAINEL DE AUDITORIA URGENTE DE PONTOS (SÓ PARA ADMIN)
+    # =========================================================
+    # Esta trava garante que apenas você veja esse painel pesado de conferência
+    if user == "ADMIN" or user == "Admin":
+        with st.expander("🔍 PAINEL DE AUDITORIA E RECONTAGEM (VAR DO ADMIN)", expanded=False):
+            st.markdown("### 🕵️‍♂️ Conferência Detalhada de Palpites e Pontos")
+            st.write("Clique no botão abaixo para puxar o relatório vivo do banco de dados e conferir a pontuação de cada palpite desta liga.")
+
+            if st.button("📊 Rodar Auditoria Detalhada", type="secondary", key="btn_rodar_auditoria_f4"):
+                # Puxa dados limpos e atualizados direto do Supabase (sem cache)
+                jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
+                palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b, liga_codigo").eq("liga_codigo", liga.strip().upper()).execute()
+                
+                jogos_dict = {str(j['id']): j for j in jogos_res.data}
+                dados_auditoria = []
+
+                # Varre palpite por palpite fazendo a matemática ao vivo na tela
+                for p in \p_res.data if 'palpites_res' in locals() else palpites_res.data:
+                    j_id = str(p['jogo_id'])
+                    if j_id in jogos_dict:
+                        j = jogos_dict[j_id]
+                        
+                        pa = int(float(str(p['palpite_a'])))
+                        pb = int(float(str(p['palpite_b'])))
+                        ra = int(float(str(j['gols_a'])))
+                        rb = int(float(str(j['gols_b'])))
+                        
+                        pts = 0
+                        motivo = "Errou tudo (0 pts)"
+                        
+                        if pa == ra and pb == rb: 
+                            pts = 3
+                            motivo = "Placar Exato (3 pts)"
+                        elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb): 
+                            pts = 1
+                            motivo = "Acertou Tendência (1 pt)"
+                        
+                        dados_auditoria.append({
+                            "Jogador": p['usuario'],
+                            "Partida": f"{j['time_a']} x {j['time_b']}",
+                            "Palpite": f"{pa} x {pb}",
+                            "Resultado Real": f"{ra} x {rb}",
+                            "Pontos Ganhos": pts,
+                            "Critério": motivo
+                        })
+
+                # Exibe o resultado em uma tabela interativa na tela do Admin
+                if dados_auditoria:
+                    df_auditoria = pd.DataFrame(dados_auditoria)
+                    
+                    # Filtro interativo para o Admin caçar um jogador específico se ele reclamar
+                    jogador_procurado = st.selectbox("Filtrar conferência por jogador:", ["Todos"] + sorted(list(df_auditoria['Jogador'].unique())))
+                    
+                    if jogador_procurado != "Todos":
+                        df_auditoria = df_auditoria[df_auditoria['Jogador'] == jogador_procurado]
+                        
+                    st.dataframe(df_auditoria, use_container_width=True, hide_index=True)
+                    st.info("💡 **Dica:** Use a tabela acima para somar manualmente os pontos de quem está reclamando e conferir se bate com o painel principal.")
+                else:
+                    st.warning("Nenhum palpite computado encontrado para jogos que já possuem resultado nesta liga.")
+
+    # =========================================================
+    # ABAS DO USUÁRIO FINAL
+    # =========================================================
     tab1, tab2, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras"])
+
+    # 1. ABA PALPITES CORRIGIDA E SEM KEYERROR
+    with tab1:
+        # (O restante do código das abas continua exatamente igual abaixo daqui...)
 
     # 1. ABA PALPITES CORRIGIDA E SEM KEYERROR
     with tab1:
