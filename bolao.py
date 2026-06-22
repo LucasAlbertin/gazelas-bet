@@ -349,6 +349,106 @@ def calcular_ranking(codigo_liga):
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
 
+def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
+    """Gera o detalhamento jogo-a-jogo usado pela aba VAR.
+
+    Faz a MESMA matemática de calcular_ranking, mas devolvendo cada linha
+    individual (em vez de só o total), além de duas listas de alerta:
+
+    - duplicatas: pares (usuario, jogo_id) que aparecem mais de uma vez na
+      tabela `palpites` — sintoma de upsert sem unique constraint.
+    - usuarios_sem_vinculo: jogadores que têm palpite salvo nesta liga mas
+      NÃO aparecem em `membros_liga` para essa liga. Esses pontos existem
+      no banco mas são ignorados pelo ranking, porque calcular_ranking só
+      soma pontos de quem está no dicionário de membros oficiais. Esta é
+      a causa mais comum de "meu ponto não foi contado".
+
+    Se usuario_filtro for informado, retorna o detalhamento apenas desse
+    jogador (mas duplicatas/usuarios_sem_vinculo continuam globais da liga).
+    """
+    cod = codigo_liga.strip().upper()
+    df_membros = get_todos_membros_liga_global()
+    membros_da_liga = set(
+        df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()
+    ) if not df_membros.empty else set()
+
+    jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
+    palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
+
+    jogos_dict = {}
+    for j in jogos_res.data:
+        jid = to_int_seguro(j['id'])
+        if jid is not None:
+            jogos_dict[jid] = j
+
+    detalhes = []
+    duplicatas = []
+    usuarios_sem_vinculo = set()
+    vistos = set()
+
+    for p in palpites_res.data:
+        usuario_p = p['usuario']
+        jogo_id_norm = to_int_seguro(p['jogo_id'])
+
+        if usuario_p not in membros_da_liga:
+            usuarios_sem_vinculo.add(usuario_p)
+
+        if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
+            continue
+
+        chave = (usuario_p, jogo_id_norm)
+        if chave in vistos:
+            duplicatas.append(f"{usuario_p} — jogo #{jogo_id_norm}")
+            continue
+        vistos.add(chave)
+
+        if usuario_filtro and usuario_p != usuario_filtro:
+            continue
+
+        j = jogos_dict[jogo_id_norm]
+        pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
+        ra, rb = to_int_seguro(j['gols_a']), to_int_seguro(j['gols_b'])
+
+        if None in (pa, pb, ra, rb):
+            continue
+
+        pts = 0
+        motivo = "❌ Errou tudo (0 pts)"
+        if pa == ra and pb == rb:
+            pts = 3
+            motivo = "🎯 Placar Exato (3 pts)"
+        elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
+            pts = 1
+            motivo = "👍 Acertou Tendência (1 pt)"
+
+        detalhes.append({
+            "Jogador": usuario_p,
+            "Partida": f"{j['time_a']} x {j['time_b']}",
+            "Palpite": f"{pa} x {pb}",
+            "Resultado Real": f"{ra} x {rb}",
+            "Pontos": pts,
+            "Critério": motivo,
+            "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO"
+        })
+
+    return {
+        "detalhes": detalhes,
+        "duplicatas": duplicatas,
+        "usuarios_sem_vinculo": usuarios_sem_vinculo,
+    }
+
+def corrigir_vinculo_membro(usuario_nome, codigo_liga):
+    """Cria o vínculo em membros_liga para um usuário que já tem palpites
+    na liga mas perdeu (ou nunca teve) o registro de membro. Isso faz os
+    pontos dele voltarem a entrar no ranking imediatamente."""
+    cod = codigo_liga.strip().upper()
+    try:
+        supabase.table("membros_liga").insert({"usuario_nome": usuario_nome, "liga_codigo": cod}).execute()
+        st.cache_data.clear()
+        return True
+    except Exception:
+        return False
+
 @st.cache_data(ttl=60)
 def get_todos_usuarios_global():
     res = supabase.table("usuarios").select("nome, senha").order("nome").execute()
@@ -759,89 +859,9 @@ else:
     c3.metric("🏆 Líder da Liga", ranking.iloc[0]['Participante'] if not ranking.empty else "-")
 
     # =========================================================
-    # 🔍 PAINEL DE AUDITORIA DE PONTOS (SÓ PARA ADMIN)
-    # =========================================================
-    if user == "ADMIN" or user == "Admin":
-        with st.expander("🔍 PAINEL DE AUDITORIA E RECONTAGEM (VAR DO ADMIN)", expanded=False):
-            st.markdown("### 🕵️‍♂️ Conferência Detalhada de Palpites e Pontos")
-            st.write("Clique no botão abaixo para puxar o relatório vivo do banco de dados.")
-
-            if st.button("📊 Rodar Auditoria Detalhada", type="secondary", key="btn_rodar_auditoria_f4"):
-                jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
-                palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b, liga_codigo").eq("liga_codigo", liga.strip().upper()).execute()
-
-                jogos_dict = {}
-                for j in jogos_res.data:
-                    jid = to_int_seguro(j['id'])
-                    if jid is not None:
-                        jogos_dict[jid] = j
-
-                dados_auditoria = []
-                duplicatas_detectadas = []
-                vistos = set()
-
-                for p in palpites_res.data:
-                    j_id = to_int_seguro(p['jogo_id'])
-                    if j_id is None or j_id not in jogos_dict:
-                        continue
-
-                    chave = (p['usuario'], j_id)
-                    if chave in vistos:
-                        duplicatas_detectadas.append(f"{p['usuario']} — jogo #{j_id}")
-                        continue
-                    vistos.add(chave)
-
-                    j = jogos_dict[j_id]
-                    pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
-                    ra, rb = to_int_seguro(j['gols_a']), to_int_seguro(j['gols_b'])
-
-                    if None in (pa, pb, ra, rb):
-                        continue
-
-                    pts = 0
-                    motivo = "Errou tudo (0 pts)"
-                    if pa == ra and pb == rb:
-                        pts = 3
-                        motivo = "Placar Exato (3 pts)"
-                    elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
-                        pts = 1
-                        motivo = "Acertou Tendência (1 pt)"
-
-                    dados_auditoria.append({
-                        "Jogador": p['usuario'],
-                        "Partida": f"{j['time_a']} x {j['time_b']}",
-                        "Palpite": f"{pa} x {pb}",
-                        "Resultado Real": f"{ra} x {rb}",
-                        "Pontos Ganhos": pts,
-                        "Critério": motivo
-                    })
-
-                if duplicatas_detectadas:
-                    st.error(
-                        "⚠️ Foram encontrados palpites DUPLICADOS no banco (mesmo jogador + mesmo jogo). "
-                        "Apenas o primeiro foi contado. Recomendo aplicar uma constraint única na tabela "
-                        "`palpites` (usuario, jogo_id, liga_codigo) para isso nunca mais ocorrer."
-                    )
-                    with st.popover("Ver duplicatas encontradas"):
-                        for d in duplicatas_detectadas:
-                            st.write(f"• {d}")
-
-                if dados_auditoria:
-                    df_auditoria = pd.DataFrame(dados_auditoria)
-
-                    jogador_procurado = st.selectbox("Filtrar conferência por jogador:", ["Todos"] + sorted(list(df_auditoria['Jogador'].unique())))
-
-                    if jogador_procurado != "Todos":
-                        df_auditoria = df_auditoria[df_auditoria['Jogador'] == jogador_procurado]
-
-                    st.dataframe(df_auditoria, use_container_width=True, hide_index=True)
-                else:
-                    st.warning("Nenhum palpite computado encontrado para jogos que já possuem resultado nesta liga.")
-
-    # =========================================================
     # ABAS DO USUÁRIO FINAL
     # =========================================================
-    tab1, tab2, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras"])
+    tab1, tab2, tab_var, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "🔍 VAR", "👀 Espiar", "🌍 Copa", "📜 Regras"])
 
     # 1. ABA PALPITES
     with tab1:
@@ -967,7 +987,82 @@ else:
         else:
             st.info("Ainda não há pontos a exibir nesta liga.")
 
-    # 3. ESPIAR ADVERSÁRIOS
+    # 3. VAR — RECONTAGEM E CONFERÊNCIA DE PONTOS
+    with tab_var:
+        st.subheader("🔍 VAR — Conferência de Pontos")
+        st.caption("Veja exatamente como cada ponto seu foi (ou não foi) contado, jogo a jogo.")
+
+        diag_proprio = obter_diagnostico_pontos(liga, usuario_filtro=user)
+
+        if diag_proprio["usuarios_sem_vinculo"] and user in diag_proprio["usuarios_sem_vinculo"]:
+            st.error(
+                "🚨 Encontramos o problema: você tem palpites salvos nesta liga, mas seu "
+                "vínculo de membro com a liga não está registrado corretamente. Por isso "
+                "seus pontos não aparecem no ranking. Avise o Admin — ele tem um botão "
+                "para corrigir isso na hora, na seção abaixo."
+            )
+
+        if diag_proprio["detalhes"]:
+            df_proprio = pd.DataFrame(diag_proprio["detalhes"]).drop(columns=["Jogador", "Vínculo na Liga"])
+            total_pts = df_proprio["Pontos"].sum()
+            st.metric("✅ Total conferido para você nesta liga", f"{total_pts} pts")
+            st.dataframe(df_proprio, use_container_width=True, hide_index=True)
+        else:
+            st.info("Ainda não há jogos com resultado oficial para conferir seus pontos.")
+
+        # ---------------------------------------------------
+        # FERRAMENTAS EXTRAS — SÓ PARA O ADMIN
+        # ---------------------------------------------------
+        if user == "ADMIN" or user == "Admin":
+            st.markdown("---")
+            st.markdown("### 🛡️ Recontagem Geral (Admin)")
+            st.caption("Use isto quando algum jogador alegar pontuação incorreta.")
+
+            diag_geral = obter_diagnostico_pontos(liga)
+
+            if diag_geral["usuarios_sem_vinculo"]:
+                st.error(
+                    f"🚨 {len(diag_geral['usuarios_sem_vinculo'])} jogador(es) têm palpites "
+                    "nesta liga mas SEM vínculo de membro — os pontos deles estão sendo "
+                    "ignorados no ranking. Corrija com um clique:"
+                )
+                for usr_orfao in sorted(diag_geral["usuarios_sem_vinculo"]):
+                    c_o1, c_o2 = st.columns([4, 1])
+                    c_o1.write(f"👤 **{usr_orfao}**")
+                    if c_o2.button("Corrigir vínculo", key=f"fix_vinculo_{usr_orfao}"):
+                        if corrigir_vinculo_membro(usr_orfao, liga):
+                            st.success(f"✅ Vínculo de {usr_orfao} corrigido! Pontos serão recontados automaticamente.")
+                            st.rerun()
+                        else:
+                            st.error("Não foi possível corrigir. Verifique se o vínculo já existe.")
+
+            if diag_geral["duplicatas"]:
+                st.warning(
+                    "⚠️ Palpites duplicados encontrados (mesmo jogador + mesmo jogo). "
+                    "Apenas o primeiro de cada par foi contado abaixo. Para isso nunca mais "
+                    "ocorrer, aplique a unique constraint sugerida no código-fonte."
+                )
+                with st.popover("Ver duplicatas"):
+                    for d in diag_geral["duplicatas"]:
+                        st.write(f"• {d}")
+
+            if not diag_geral["usuarios_sem_vinculo"] and not diag_geral["duplicatas"]:
+                st.success("✅ Nenhuma inconsistência estrutural encontrada nesta liga.")
+
+            if diag_geral["detalhes"]:
+                df_geral = pd.DataFrame(diag_geral["detalhes"])
+                jogador_sel = st.selectbox(
+                    "Conferir jogador específico:",
+                    ["Todos"] + sorted(df_geral['Jogador'].unique().tolist()),
+                    key="var_admin_filtro_jogador"
+                )
+                if jogador_sel != "Todos":
+                    df_geral = df_geral[df_geral['Jogador'] == jogador_sel]
+                st.dataframe(df_geral, use_container_width=True, hide_index=True)
+            else:
+                st.info("Nenhum palpite computável encontrado para jogos com resultado nesta liga.")
+
+    # 4. ESPIAR ADVERSÁRIOS
     with tab3:
         st.subheader("👀 Espiar Adversários")
         if not jogos.empty:
@@ -997,7 +1092,7 @@ else:
                         else: st.warning("🔒 Oculto até o início do jogo.")
                         st.markdown("---")
 
-    # 4. TABELA COPA MUNDIAL
+    # 5. TABELA COPA MUNDIAL
     with tab_copa:
         df_copa = calcular_tabela_copa()
         if not df_copa.empty:
@@ -1005,7 +1100,7 @@ else:
                 st.markdown(f"### {grupo}")
                 st.dataframe(df_copa[df_copa['Grupo']==grupo].sort_values(by=['Pts','SG','GP'], ascending=False).drop(columns=['Grupo']), use_container_width=True, hide_index=True)
 
-    # 5. REGRAS
+    # 6. REGRAS
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
         st.markdown("""
