@@ -661,11 +661,10 @@ else:
     # =========================================================
     # 🔍 PAINEL DE AUDITORIA URGENTE DE PONTOS (SÓ PARA ADMIN)
     # =========================================================
-    # Esta trava garante que apenas você veja esse painel pesado de conferência
     if user == "ADMIN" or user == "Admin":
         with st.expander("🔍 PAINEL DE AUDITORIA E RECONTAGEM (VAR DO ADMIN)", expanded=False):
             st.markdown("### 🕵️‍♂️ Conferência Detalhada de Palpites e Pontos")
-            st.write("Clique no botão abaixo para puxar o relatório vivo do banco de dados e conferir a pontuação de cada palpite desta liga.")
+            st.write("Clique no botão abaixo para puxar o relatório vivo do banco de dados.")
 
             if st.button("📊 Rodar Auditoria Detalhada", type="secondary", key="btn_rodar_auditoria_f4"):
                 # Puxa dados limpos e atualizados direto do Supabase (sem cache)
@@ -709,14 +708,12 @@ else:
                 if dados_auditoria:
                     df_auditoria = pd.DataFrame(dados_auditoria)
                     
-                    # Filtro interativo para o Admin caçar um jogador específico se ele reclamar
                     jogador_procurado = st.selectbox("Filtrar conferência por jogador:", ["Todos"] + sorted(list(df_auditoria['Jogador'].unique())))
                     
                     if jogador_procurado != "Todos":
                         df_auditoria = df_auditoria[df_auditoria['Jogador'] == jogador_procurado]
                         
                     st.dataframe(df_auditoria, use_container_width=True, hide_index=True)
-                    st.info("💡 **Dica:** Use a tabela acima para somar manualmente os pontos de quem está reclamando e conferir se bate com o painel principal.")
                 else:
                     st.warning("Nenhum palpite computado encontrado para jogos que já possuem resultado nesta liga.")
 
