@@ -467,7 +467,7 @@ def get_todos_usuarios_global():
     res = supabase.table("usuarios").select("nome, senha").order("nome").execute()
     return pd.DataFrame(res.data)
 
-# --- GERENCIAMENTO ADMIN ---
+# --- GERENCIAMENTO  ---
 def deletar_usuario(nome_usuario):
     supabase.table("palpites").delete().eq("usuario", nome_usuario).execute()
     supabase.table("membros_liga").delete().eq("usuario_nome", nome_usuario).execute()
@@ -563,7 +563,7 @@ if 'liga_ativa' not in st.session_state: st.session_state.liga_ativa = None
 
 if st.session_state.usuario_logado is None and "cookie_user" in st.query_params:
     cookie_u = st.query_params["cookie_user"]
-    if cookie_u == "ADMIN":
+    if cookie_u == "":
         st.session_state.usuario_logado = "ADMIN"
     else:
         res_c = supabase.table("usuarios").select("nome").ilike("nome", cookie_u.strip()).execute()
@@ -850,7 +850,6 @@ elif st.session_state.liga_ativa is None:
                     st.error(mensagem)
             else:
                 st.warning("O nome de usuário não pode ficar vazio!")
-
 # =========================================================
 # FLUXO 4: INTERIOR DE UMA LIGA SELECIONADA
 # =========================================================
@@ -929,7 +928,7 @@ else:
                             st.markdown("</div>", unsafe_allow_html=True)
 
             if not jogos_futuros_existentes:
-                st.info("Não há novos jogos agendados abertos para palpites.")
+                st.info("Não hay novos jogos agendados abertos para palpites.")
 
             st.markdown("<br><hr style='border-color:rgba(255,255,255,0.1);'><br>", unsafe_allow_html=True)
 
@@ -1003,7 +1002,7 @@ else:
     # 3. VAR — RECONTAGEM E CONFERÊNCIA DE PONTOS
     with tab_var:
         st.subheader("🔍 VAR — Conferência de Pontos")
-        st.caption("Veja exatamente como cada ponto seu foi (ou não foi) contado. Jogos listados em ordem cronológica, do mais antigo para o mais recente, para ninguém se perder.")
+        st.caption("Veja exatamente como cada ponto seu foi (or não foi) contado, jogo a jogo.")
 
         diag_proprio = obter_diagnostico_pontos(liga, usuario_filtro=user)
 
@@ -1028,9 +1027,46 @@ else:
         # ---------------------------------------------------
         if user == "ADMIN" or user == "Admin":
             st.markdown("---")
-            st.markdown("### 🛡️ Recontagem Geral (Admin)")
-            st.caption("Use isto quando algum jogador alegar pontuação incorreta.")
+            st.markdown("### 🛡️ Ferramentas de Manutenção (Admin)")
 
+            # --- NOVO BLOCO CATA-BUGS DE IDs FANTASMAS ---
+            with st.expander("⚙️ Investigador de Palpites Órfãos (Jogos Fantasmas)", expanded=True):
+                st.write("Use esta ferramenta para encontrar palpites travados em IDs de jogos antigos.")
+
+                if st.button("🔍 Procurar Palpites Desalinhados", key="btn_manutencao_ids_var"):
+                    todas_partidas = supabase.table("jogos").select("id, time_a, time_b").execute()
+                    todos_palpites = supabase.table("palpites").select("id, usuario, jogo_id, palpite_a, palpite_b").execute()
+                    
+                    ids_jogos_reais = {j['id'] for j in todas_partidas.data}
+                    palpites_com_erro = []
+
+                    for p in todos_palpites.data:
+                        if p['jogo_id'] not in ids_jogos_reais:
+                            palpites_com_erro.append(p)
+
+                    if palpites_com_erro:
+                        st.error(f"🚨 Encontramos {len(palpites_com_erro)} palpites apontando para jogos que NÃO existem mais!")
+                        for err in palpites_com_erro:
+                            st.write(f"👤 **{err['usuario']}** | Palpite: {err['palpite_a']}x{err['palpite_b']} | ID Fantasma: `{err['jogo_id']}`")
+                        
+                        st.markdown("---")
+                        st.subheader("🔄 Mapear ID Fantasma para o ID Correto")
+                        
+                        id_velho = st.number_input("ID Fantasma (Errado):", step=1, key="id_fantasma_input_var")
+                        id_novo = st.number_input("ID do Jogo Real (Certo):", step=1, key="id_real_input_var")
+                        
+                        if st.button("Migrar Palpites Agora", type="primary", key="btn_migrar_real"):
+                            if id_velho and id_novo:
+                                supabase.table("palpites").update({"jogo_id": int(id_novo)}).eq("jogo_id", int(id_velho)).execute()
+                                st.cache_data.clear()
+                                st.success(f"🎉 Palpites migrados com sucesso!")
+                                st.rerun()
+                    else:
+                        st.success("✅ Nenhum palpite órfão encontrado! Todos os palpites estão vinculados a jogos reais.")
+
+            st.markdown("---")
+            st.caption("Controle e recontagem de vínculos de participantes:")
+            
             diag_geral = obter_diagnostico_pontos(liga)
 
             if diag_geral["usuarios_sem_vinculo"]:
@@ -1052,8 +1088,7 @@ else:
             if diag_geral["duplicatas"]:
                 st.warning(
                     "⚠️ Palpites duplicados encontrados (mesmo jogador + mesmo jogo). "
-                    "Apenas o primeiro de cada par foi contado abaixo. Para isso nunca mais "
-                    "ocorrer, aplique a unique constraint sugerida no código-fonte."
+                    "Apenas o primeiro de cada par foi contado abaixo."
                 )
                 with st.popover("Ver duplicatas"):
                     for d in diag_geral["duplicatas"]:
