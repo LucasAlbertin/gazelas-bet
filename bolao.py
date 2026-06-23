@@ -1063,19 +1063,9 @@ else:
                                     st.markdown("<div style='text-align:center; font-size:12px; color:#EF4444;'>❌ Você perdeu o prazo deste jogo.</div>", unsafe_allow_html=True)
                                 st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. RANKING
+   # 2. RANKING
     with tab2:
         st.subheader("🏆 Classificação da Liga")
-        
-       # --- DIAGNÓSTICO DO JAMESFRANCO NO RANKING ---
-        diag_ranking = obter_diagnostico_pontos(liga)
-        df_diag = pd.DataFrame(diag_ranking["detalhes"])
-        if not df_diag.empty:
-            # Procura limpando qualquer diferença de letras maiúsculas/minúsculas
-            df_diag['Jogador_Upper'] = df_diag['Jogador'].str.strip().str.upper()
-            pts_james_ranking = df_diag[df_diag['Jogador_Upper'] == 'JAMESFRANCO']['Pontos'].sum()
-            st.warning(f"🕵️‍♂️ DEBUG INTERNO: O diagnóstico geral calculou **{pts_james_ranking} pts** para o JamesFranco.")
-        # ---------------------------------------------
 
         if not ranking.empty:
             df_visual = ranking.copy()
