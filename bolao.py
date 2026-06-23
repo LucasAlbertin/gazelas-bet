@@ -318,63 +318,62 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
 
 @st.cache_data(ttl=5)
 def calcular_ranking(codigo_liga):
-    """Calcula o ranking de pontos de forma direta consumindo o get_jogos()
-
-    para evitar erros de nomes de colunas no Supabase."""
+    """Calcula o ranking de pontos de forma blindada, aceitando variações de colunas e nomes."""
     cod = codigo_liga.strip().upper()
     
-    # 1. Consome os jogos através da função segura que já funciona perfeitamente
-    df_jogos_todos = get_jogos()
-    
-    if not df_jogos_todos.empty:
-        # Identifica dinamicamente quais colunas de resultado existem no DataFrame
-        col_a = 'resultado_a' if 'resultado_a' in df_jogos_todos.columns else 'gols_a'
-        col_b = 'resultado_b' if 'resultado_b' in df_jogos_todos.columns else 'gols_b'
+    df_membros = get_todos_membros_liga_global()
+    if df_membros.empty:
+        return pd.DataFrame(columns=['Participante', 'Pontos'])
         
-        # Filtra apenas partidas encerradas
-        df_jogos_encerrados = df_jogos_todos[df_jogos_todos[col_a].notnull() & df_jogos_todos[col_b].notnull()]
-    else:
-        df_jogos_encerrados = pd.DataFrame()
+    membros_brutos = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()
+    membros_da_liga = [str(m).strip() for m in membros_brutos]
+    membros_norm_set = {m.upper() for m in membros_da_liga}
 
-    # 2. Puxa os palpites do banco
+    # Puxa os jogos direto do banco
+    jogos_res = supabase.table("jogos").select("*").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
-    # Mapeia os jogos encerrados pelo ID
+    pontos = {m: 0 for m in membros_da_liga}
     jogos_dict = {}
-    if not df_jogos_encerrados.empty:
-        for _, j in df_jogos_encerrados.iterrows():
-            jid = to_int_seguro(j['id'])
-            if jid is not None:
-                jogos_dict[jid] = j
+    
+    for j in jogos_res.data:
+        jid = to_int_seguro(j['id'])
+        if jid is not None:
+            jogos_dict[jid] = j
 
-    pontos = {}
     palpites_vistos = set()
 
-    # 3. Calcula as pontuações
     for p in palpites_res.data:
-        usuario_original = str(p['usuario']).strip()
-        user_norm = usuario_original.upper()
+        usr_bruto = str(p['usuario']).strip()
+        usr_upper = usr_bruto.upper()
+        
         jogo_id_norm = to_int_seguro(p['jogo_id'])
+        if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
+            continue
 
-        if juego_id_norm := jogo_id_norm or jogo_id_norm not in jogos_dict:
-            if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
-                continue
+        # Encontra o nome correto correspondente na liga (case-insensitive)
+        nome_membro_oficial = None
+        for m in membros_da_liga:
+            if m.upper() == usr_upper:
+                nome_membro_oficial = m
+                break
+                
+        if not nome_membro_oficial:
+            continue
 
-        # Evita duplicados
-        chave_unica = (user_norm, jogo_id_norm)
+        chave_unica = (usr_upper, jogo_id_norm)
         if chave_unica in palpites_vistos:
             continue
         palpites_vistos.add(chave_unica)
 
         j = jogos_dict[jogo_id_norm]
+
         pa = to_int_seguro(p['palpite_a'])
         pb = to_int_seguro(p['palpite_b'])
         
-        # Busca dinâmica de gols para não quebrar
-        col_a = 'resultado_a' if 'resultado_a' in j else 'gols_a'
-        col_b = 'resultado_b' if 'resultado_b' in j else 'gols_b'
-        ra = to_int_seguro(j.get(col_a))
-        rb = to_int_seguro(j.get(col_b))
+        # SUPORTE DUPLO: Aceita tanto 'gols_a' quanto 'resultado_a' do banco
+        ra = to_int_seguro(j.get('resultado_a') if 'resultado_a' in j else j.get('gols_a'))
+        rb = to_int_seguro(j.get('resultado_b') if 'resultado_b' in j else j.get('gols_b'))
 
         if pa is None or pb is None or ra is None or rb is None:
             continue
@@ -385,82 +384,62 @@ def calcular_ranking(codigo_liga):
         elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
             pts = 1
 
-        if usuario_original not in pontos:
-            pontos[usuario_original] = 0
-        pontos[usuario_original] += pts
-
-    # Garante a presença de todos os membros da liga no DataFrame final
-    df_membros = get_todos_membros_liga_global()
-    if not df_membros.empty:
-        membros_da_liga = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()
-        for m in membros_da_liga:
-            nome_limpo = m.strip()
-            if nome_limpo not in pontos:
-                pontos[nome_limpo] = 0
+        pontos[nome_membro_oficial] += pts
 
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos'])
     df = df.sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
-    
+
+
 def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
-    """Gera o detalhamento jogo-a-jogo usado pela aba VAR, ordenado por data."""
+    """Gera o detalhamento do VAR corrigindo o bug de mapeamento de colunas e nomes."""
     cod = codigo_liga.strip().upper()
+    
     df_membros = get_todos_membros_liga_global()
-    
-    membros_da_liga = set(
-        [str(m).strip().upper() for m in df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()]
-    ) if not df_membros.empty else set()
+    membros_brutos = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
+    membros_da_liga = [str(m).strip() for m in membros_brutos]
+    membros_set_upper = {m.upper() for m in membros_da_liga}
 
-    df_jogos_todos = get_jogos()
-    
-    if not df_jogos_todos.empty:
-        # Garante a busca pelas colunas reais 'resultado_a' e 'resultado_b'
-        col_a = 'resultado_a' if 'resultado_a' in df_jogos_todos.columns else 'gols_a'
-        col_b = 'resultado_b' if 'resultado_b' in df_jogos_todos.columns else 'gols_b'
-        df_jogos_encerrados = df_jogos_todos[df_jogos_todos[col_a].notnull() & df_jogos_todos[col_b].notnull()]
-    else:
-        df_jogos_encerrados = pd.DataFrame()
-
+    jogos_res = supabase.table("jogos").select("*").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
     jogos_dict = {}
-    if not df_jogos_encerrados.empty:
-        for _, j in df_jogos_encerrados.iterrows():
-            jid = to_int_seguro(j['id'])
-            if jid is not None:
-                jogos_dict[jid] = j
+    for j in jogos_res.data:
+        jid = to_int_seguro(j['id'])
+        if jid is not None:
+            jogos_dict[jid] = j
 
     detalhes = []
     duplicatas = []
     usuarios_sem_vinculo = set()
     vistos = set()
 
-    usuario_filtro_norm = str(usuario_filtro).strip().upper() if usuario_filtro else None
+    usuario_filtro_upper = str(usuario_filtro).strip().upper() if usuario_filtro else None
 
     for p in palpites_res.data:
-        usuario_original = str(p['usuario']).strip()
-        usuario_p = usuario_original.upper()
+        usr_original = str(p['usuario']).strip()
+        usr_upper = usr_original.upper()
         jogo_id_norm = to_int_seguro(p['jogo_id'])
 
-        if usuario_p not in membros_da_liga:
-            usuarios_sem_vinculo.add(usuario_original)
+        if usr_upper not in membros_set_upper:
+            usuarios_sem_vinculo.add(usr_original)
 
         if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
-        chave = (usuario_p, jogo_id_norm)
+        chave = (usr_upper, jogo_id_norm)
         if chave in vistos:
-            duplicatas.append(f"{usuario_original} — jogo #{jogo_id_norm}")
+            duplicatas.append(f"{usr_original} — jogo #{jogo_id_norm}")
             continue
         vistos.add(chave)
 
-        if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
+        if usuario_filtro_upper and usr_upper != usuario_filtro_upper:
             continue
 
         j = jogos_dict[jogo_id_norm]
         pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
         
-        # Busca dinamicamente para evitar novos travamentos de coluna
+        # SUPORTE DUPLO: Identifica dinamicamente a coluna de gols reais
         ra = to_int_seguro(j.get('resultado_a') if 'resultado_a' in j else j.get('gols_a'))
         rb = to_int_seguro(j.get('resultado_b') if 'resultado_b' in j else j.get('gols_b'))
 
@@ -476,32 +455,30 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             pts = 1
             motivo = "👍 Acertou Tendência (1 pt)"
 
-        data_exibicao = j.get('data_apenas', 'Sem data')
-        hora_exibicao = j.get('hora_apenas', '--:--')
+        data_ordenavel = pd.to_datetime(str(j.get('data_hora', '')).replace('T', ' '), errors='coerce')
 
         detalhes.append({
-            "Jogador": usuario_original,
-            "Data/Hora": f"{data_exibicao} às {hora_exibicao}",
+            "_data_ordenavel": data_ordenavel,
+            "Data": data_ordenavel.strftime('%d/%m/%Y %H:%M') if pd.notnull(data_ordenavel) else "?",
+            "Jogador": usr_original,
             "Partida": f"{j['time_a']} x {j['time_b']}",
             "Palpite": f"{pa} x {pb}",
             "Resultado Real": f"{ra} x {rb}",
             "Pontos": pts,
             "Critério": motivo,
-            "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO",
-            "ordenador_data": j.get('datetime_convertido', datetime.min)
+            "Vínculo na Liga": "✅" if usr_upper in membros_set_upper else "🚨 SEM VÍNCULO"
         })
 
-    if detalhes:
-        df_ordenador = pd.DataFrame(detalhes)
-        if 'ordenador_data' in df_ordenador.columns:
-            df_ordenador = df_ordenador.sort_values(by='ordenador_data', ascending=True)
-            detalhes = df_ordenador.drop(columns=['ordenador_data']).to_dict(orient='records')
+    detalhes.sort(key=lambda d: (d["_data_ordenavel"] is pd.NaT, d["_data_ordenavel"]))
+    for d in detalhes:
+        del d["_data_ordenavel"]
 
     return {
         "detalhes": detalhes,
         "duplicatas": duplicatas,
         "usuarios_sem_vinculo": usuarios_sem_vinculo,
     }
+    
 def corrigir_vinculo_membro(usuario_nome, codigo_liga):
     """Cria o vínculo em membros_liga para um usuário que já tem palpites
     na liga mas perdeu (ou nunca teve) o registro de membro. Isso faz os
