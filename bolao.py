@@ -387,7 +387,7 @@ def calcular_ranking(codigo_liga):
     return df
     
 def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
-    """Gera o detalhamento jogo-a-jogo usado pela aba VAR de forma blindada contra caixa alta/baixa."""
+    """Gera o detalhamento jogo-a-jogo usado pela aba VAR, ordenado por data."""
     cod = codigo_liga.strip().upper()
     df_membros = get_todos_membros_liga_global()
     
@@ -396,25 +396,36 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         [str(m).strip().upper() for m in df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()]
     ) if not df_membros.empty else set()
 
-    jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
+    # Em vez de puxar do banco cru, usamos o get_jogos() que já tem as datas convertidas e tratadas
+    df_jogos_todos = get_jogos()
+    
+    # Filtramos apenas os jogos que já possuem resultado oficial preenchido
+    if not df_jogos_todos.empty:
+        df_jogos_encerrados = df_jogos_todos[
+            df_jogos_todos['gols_a'].notnull() & df_jogos_todos['gols_b'].notnull()
+        ]
+    else:
+        df_jogos_encerrados = pd.DataFrame()
+
+    # Puxa os palpites da liga
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
+    # Mapeia os jogos encerrados usando o ID como chave
     jogos_dict = {}
-    for j in jogos_res.data:
-        jid = to_int_seguro(j['id'])
-        if jid is not None:
-            jogos_dict[jid] = j
+    if not df_jogos_encerrados.empty:
+        for _, j in df_jogos_encerrados.iterrows():
+            jid = to_int_seguro(j['id'])
+            if jid is not None:
+                jogos_dict[jid] = j
 
     detalhes = []
     duplicatas = []
     usuarios_sem_vinculo = set()
     vistos = set()
 
-    # Se houver filtro de usuário, padroniza para maiúsculo também
     usuario_filtro_norm = str(usuario_filtro).strip().upper() if usuario_filtro else None
 
-    for p in palpites_res.data:
-        # Pega o nome do jogador original e limpa/padroniza em maiúsculo para processar
+    for p in templates_res := palpites_res.data:
         usuario_original = str(p['usuario']).strip()
         usuario_p = usuario_original.upper()
         jogo_id_norm = to_int_seguro(p['jogo_id'])
@@ -425,14 +436,13 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
-        # Evita duplicidades usando o nome padronizado
+        # Evita duplicidades
         chave = (usuario_p, jogo_id_norm)
         if chave in vistos:
             duplicatas.append(f"{usuario_original} — jogo #{jogo_id_norm}")
             continue
         vistos.add(chave)
 
-        # Se estiver filtrando na aba VAR, compara de forma segura
         if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
             continue
 
@@ -452,23 +462,28 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             pts = 1
             motivo = "👍 Acertou Tendência (1 pt)"
 
+        # Buscamos a data formatada ou o datetime convertido para ordenar
+        data_exibicao = j.get('data_apenas', 'Sem data')
+        hora_exibicao = j.get('hora_apenas', '--:--')
+
         detalhes.append({
             "Jogador": usuario_original,
+            "Data/Hora": f"{data_exibicao} às {hora_exibicao}",
             "Partida": f"{j['time_a']} x {j['time_b']}",
             "Palpite": f"{pa} x {pb}",
             "Resultado Real": f"{ra} x {rb}",
             "Pontos": pts,
             "Critério": motivo,
             "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO",
-            "data_ordenacao": j.get('data_hora', '') # Campo oculto para ordenar
+            "ordenador_data": j.get('datetime_convertido', datetime.min)
         })
 
-    # Transforma em DataFrame temporário para ordenar por data cronológica real do jogo
+    # Ordenação cronológica garantida usando o datetime real do jogo
     if detalhes:
         df_ordenador = pd.DataFrame(detalhes)
-        if 'data_ordenacao' in df_ordenador.columns:
-            df_ordenador = df_ordenador.sort_values(by='data_ordenacao', ascending=True)
-            detalhes = df_ordenador.drop(columns=['data_ordenacao']).to_dict(orient='records')
+        if 'ordenador_data' in df_ordenador.columns:
+            df_ordenador = df_ordenador.sort_values(by='ordenador_data', ascending=True)
+            detalhes = df_ordenador.drop(columns=['ordenador_data']).to_dict(orient='records')
 
     return {
         "detalhes": detalhes,
