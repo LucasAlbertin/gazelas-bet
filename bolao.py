@@ -316,57 +316,43 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
     df.rename(columns={'usuario': 'Participante', 'palpite_a': 'Gols A', 'palpite_b': 'Gols B'}, inplace=True)
     return df
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def calcular_ranking(codigo_liga):
-    """Calcula o ranking de pontos de uma liga.
+    """Calcula o ranking de pontos de forma direta pelos palpites, 
 
-    Esta função tem três camadas de proteção contra os bugs que já
-    causaram pontuação incorreta no passado:
-
-    1. Normaliza jogo_id para int em ambos os lados (jogos e palpites),
-       evitando que uma comparação "5" == 5 falhe silenciosamente.
-    2. Ignora um segundo palpite do mesmo usuário para o mesmo jogo
-       (proteção contra linhas duplicadas herdadas de upserts antigos
-       sem unique constraint).
-    3. Normaliza o nome do usuário para sua grafia canônica (tabela
-       `usuarios`), evitando que 'JamesFranco' e 'jamesfranco' sejam
-       tratados como duas pessoas diferentes e percam pontos um do outro.
-    """
+    garantindo paridade total com a aba VAR."""
     cod = codigo_liga.strip().upper()
-    mapa_nomes = get_mapa_nomes_canonicos()
-
-    df_membros = get_todos_membros_liga_global()
-    membros_brutos = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
-    # dict.fromkeys preserva a ordem e remove duplicatas geradas pela normalização
-    membros_filtrados = list(dict.fromkeys(normalizar_usuario(m, mapa_nomes) for m in membros_brutos))
-
+    
+    # Puxa os dados atualizados do banco
     jogos_res = supabase.table("jogos").select("id, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
-    pontos = {m: 0 for m in membros_filtrados}
-
+    # Mapeia os jogos
     jogos_dict = {}
     for j in jogos_res.data:
         jid = to_int_seguro(j['id'])
         if jid is not None:
             jogos_dict[jid] = j
 
+    pontos = {}
     palpites_vistos = set()
 
+    # Varre os palpites exatamente como a aba VAR faz
     for p in palpites_res.data:
-        usuario_norm = normalizar_usuario(p['usuario'], mapa_nomes)
-
+        usuario_original = str(p['usuario']).strip()
+        user_norm = usuario_original.upper()
         jogo_id_norm = to_int_seguro(p['jogo_id'])
+
         if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
-        chave_unica = (usuario_norm, jogo_id_norm)
+        # Evita duplicados preservando o nome original de exibição
+        chave_unica = (user_norm, jogo_id_norm)
         if chave_unica in palpites_vistos:
             continue
         palpites_vistos.add(chave_unica)
 
         j = jogos_dict[jogo_id_norm]
-
         pa = to_int_seguro(p['palpite_a'])
         pb = to_int_seguro(p['palpite_b'])
         ra = to_int_seguro(j['gols_a'])
@@ -375,18 +361,31 @@ def calcular_ranking(codigo_liga):
         if pa is None or pb is None or ra is None or rb is None:
             continue
 
+        # Matemática dos pontos
         pts = 0
         if pa == ra and pb == rb:
             pts = 3
         elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
             pts = 1
 
-        if usuario_norm in pontos:
-            pontos[usuario_norm] += pts
+        # Acumula os pontos mapeando pelo nome correto digitado pelo usuário
+        if usuario_original not in pontos:
+            pontos[usuario_original] = 0
+        pontos[usuario_original] += pts
 
-    df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
+    # Garante que mesmo quem não pontuou mas está na liga apareça com 0
+    df_membros = get_todos_membros_liga_global()
+    if not df_membros.empty:
+        membros_da_liga = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()
+        for m in membros_da_liga:
+            if m.strip() not in pontos:
+                pontos[m.strip()] = 0
+
+    # Cria o DataFrame final do ranking
+    df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos'])
+    df = df.sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
-
+    
 def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
     """Gera o detalhamento jogo-a-jogo usado pela aba VAR.
 
