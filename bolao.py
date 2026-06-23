@@ -463,11 +463,10 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         })
 
     return {
-        "detalhes": detalles,
+        "detalhes": detalhes,
         "duplicatas": duplicatas,
         "usuarios_sem_vinculo": usuarios_sem_vinculo,
     }
-
 def corrigir_vinculo_membro(usuario_nome, codigo_liga):
     """Cria o vínculo em membros_liga para um usuário que já tem palpites
     na liga mas perdeu (ou nunca teve) o registro de membro. Isso faz os
