@@ -1222,4 +1222,5 @@ else:
         """, unsafe_allow_html=True)
 
 # RODAPÉ CRÉDITOS
-st.markdown("<div class='footer'>CRIADO POR LUCAS ALBERTIN • GAZELAS BET 2026</div>", unsafe_allow_html=True)
+APP_VERSION = "v1.3 — normalização de nomes + VAR + recálculo geral (2026-06-23)"
+st.markdown(f"<div class='footer'>CRIADO POR LUCAS ALBERTIN • GAZELAS BET 2026<br><span style='opacity:0.5;'>{APP_VERSION}</span></div>", unsafe_allow_html=True)
