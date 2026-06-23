@@ -143,6 +143,36 @@ def to_int_seguro(valor, padrao=None):
         return padrao
 
 
+@st.cache_data(ttl=60)
+def get_mapa_nomes_canonicos():
+    """Mapeia qualquer variação de maiúsculas/espaços de um nome de usuário
+    para o nome EXATO cadastrado na tabela `usuarios`.
+
+    Resolve um bug sutil: comparações de texto no Postgres são
+    case-sensitive. Se o mesmo jogador acabou salvo como 'JamesFranco' numa
+    tabela e 'jamesfranco' em outra (ex: digitou diferente ao ingressar
+    numa liga, ou um upsert antigo gravou com caixa diferente), o sistema
+    passa a tratá-los como duas pessoas distintas — e os pontos de uma
+    "grafia" nunca somam com os da outra. Usamos a tabela `usuarios` como
+    fonte da verdade, pois é com ela que a pessoa efetivamente faz login.
+    """
+    df = get_todos_usuarios_global()
+    if df.empty:
+        return {}
+    return {str(n).strip().lower(): n for n in df['nome'].tolist()}
+
+
+def normalizar_usuario(nome_bruto, mapa_canonico):
+    """Converte um nome de usuário (como veio do banco) para sua grafia
+    canônica, se houver uma correspondência case-insensitive em `usuarios`.
+    Caso não encontre (ex: usuário já foi excluído), devolve o nome original
+    apenas com espaços extras removidos."""
+    if nome_bruto is None:
+        return nome_bruto
+    chave = str(nome_bruto).strip().lower()
+    return mapa_canonico.get(chave, str(nome_bruto).strip())
+
+
 # =========================================================
 # FUNÇÕES DE BANCO DE DADOS
 # =========================================================
@@ -290,19 +320,25 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
 def calcular_ranking(codigo_liga):
     """Calcula o ranking de pontos de uma liga.
 
-    Esta função tem duas camadas de proteção contra os bugs que já
+    Esta função tem três camadas de proteção contra os bugs que já
     causaram pontuação incorreta no passado:
 
     1. Normaliza jogo_id para int em ambos os lados (jogos e palpites),
        evitando que uma comparação "5" == 5 falhe silenciosamente.
     2. Ignora um segundo palpite do mesmo usuário para o mesmo jogo
        (proteção contra linhas duplicadas herdadas de upserts antigos
-       sem unique constraint). A correção definitiva é aplicar a
-       constraint única no banco — ver `salvar_palpite`.
+       sem unique constraint).
+    3. Normaliza o nome do usuário para sua grafia canônica (tabela
+       `usuarios`), evitando que 'JamesFranco' e 'jamesfranco' sejam
+       tratados como duas pessoas diferentes e percam pontos um do outro.
     """
     cod = codigo_liga.strip().upper()
+    mapa_nomes = get_mapa_nomes_canonicos()
+
     df_membros = get_todos_membros_liga_global()
-    membros_filtrados = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
+    membros_brutos = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
+    # dict.fromkeys preserva a ordem e remove duplicatas geradas pela normalização
+    membros_filtrados = list(dict.fromkeys(normalizar_usuario(m, mapa_nomes) for m in membros_brutos))
 
     jogos_res = supabase.table("jogos").select("id, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
@@ -318,11 +354,13 @@ def calcular_ranking(codigo_liga):
     palpites_vistos = set()
 
     for p in palpites_res.data:
+        usuario_norm = normalizar_usuario(p['usuario'], mapa_nomes)
+
         jogo_id_norm = to_int_seguro(p['jogo_id'])
         if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
-        chave_unica = (p['usuario'], jogo_id_norm)
+        chave_unica = (usuario_norm, jogo_id_norm)
         if chave_unica in palpites_vistos:
             continue
         palpites_vistos.add(chave_unica)
@@ -343,8 +381,8 @@ def calcular_ranking(codigo_liga):
         elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
             pts = 1
 
-        if p['usuario'] in pontos:
-            pontos[p['usuario']] += pts
+        if usuario_norm in pontos:
+            pontos[usuario_norm] += pts
 
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
@@ -367,10 +405,12 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
     jogador (mas duplicatas/usuarios_sem_vinculo continuam globais da liga).
     """
     cod = codigo_liga.strip().upper()
+    mapa_nomes = get_mapa_nomes_canonicos()
+    usuario_filtro_norm = normalizar_usuario(usuario_filtro, mapa_nomes) if usuario_filtro else None
+
     df_membros = get_todos_membros_liga_global()
-    membros_da_liga = set(
-        df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()
-    ) if not df_membros.empty else set()
+    membros_brutos = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
+    membros_da_liga = set(normalizar_usuario(m, mapa_nomes) for m in membros_brutos)
 
     jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b, data_hora").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
@@ -387,7 +427,7 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
     vistos = set()
 
     for p in palpites_res.data:
-        usuario_p = p['usuario']
+        usuario_p = normalizar_usuario(p['usuario'], mapa_nomes)
         jogo_id_norm = to_int_seguro(p['jogo_id'])
 
         if usuario_p not in membros_da_liga:
@@ -402,7 +442,7 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             continue
         vistos.add(chave)
 
-        if usuario_filtro and usuario_p != usuario_filtro:
+        if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
             continue
 
         j = jogos_dict[jogo_id_norm]
