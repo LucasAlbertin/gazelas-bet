@@ -324,7 +324,8 @@ def calcular_ranking(codigo_liga):
     cod = codigo_liga.strip().upper()
     
     # Puxa os dados atualizados do banco
-    jogos_res = supabase.table("jogos").select("id, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
+   # Altere a consulta se ela estiver buscando por 'gols_a'
+    jogos_res = supabase.table("jogos").select("id, time_a, time_b, resultado_a, resultado_b").not_.is_("resultado_a", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
     # Mapeia os jogos
@@ -446,9 +447,12 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
             continue
 
-        j = jogos_dict[jogo_id_norm]
+       j = jogos_dict[jogo_id_norm]
         pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
-        ra, rb = to_int_seguro(j['gols_a']), to_int_seguro(j['gols_b'])
+        
+        # AJUSTE: Mudando de 'gols_a'/'gols_b' para os nomes reais do seu banco
+        ra = to_int_seguro(j.get('resultado_a'))
+        rb = to_int_seguro(j.get('resultado_b'))
 
         if None in (pa, pb, ra, rb):
             continue
