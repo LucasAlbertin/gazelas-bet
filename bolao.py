@@ -316,38 +316,51 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
     df.rename(columns={'usuario': 'Participante', 'palpite_a': 'Gols A', 'palpite_b': 'Gols B'}, inplace=True)
     return df
 
-@st.cache_data(ttl=1)
+@st.cache_data(ttl=5)
 def calcular_ranking(codigo_liga):
-    """Calcula o ranking de pontos de forma direta pelos palpites, 
+    """Calcula o ranking de pontos de forma direta consumindo o get_jogos()
 
-    garantindo paridade total com a aba VAR."""
+    para evitar erros de nomes de colunas no Supabase."""
     cod = codigo_liga.strip().upper()
     
-    # Puxa os dados atualizados do banco
-   # Altere a consulta se ela estiver buscando por 'gols_a'
-    jogos_res = supabase.table("jogos").select("id, time_a, time_b, resultado_a, resultado_b").not_.is_("resultado_a", "null").execute()
+    # 1. Consome os jogos através da função segura que já funciona perfeitamente
+    df_jogos_todos = get_jogos()
+    
+    if not df_jogos_todos.empty:
+        # Identifica dinamicamente quais colunas de resultado existem no DataFrame
+        col_a = 'resultado_a' if 'resultado_a' in df_jogos_todos.columns else 'gols_a'
+        col_b = 'resultado_b' if 'resultado_b' in df_jogos_todos.columns else 'gols_b'
+        
+        # Filtra apenas partidas encerradas
+        df_jogos_encerrados = df_jogos_todos[df_jogos_todos[col_a].notnull() & df_jogos_todos[col_b].notnull()]
+    else:
+        df_jogos_encerrados = pd.DataFrame()
+
+    # 2. Puxa os palpites do banco
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
-    # Mapeia os jogos
+    # Mapeia os jogos encerrados pelo ID
     jogos_dict = {}
-    for j in jogos_res.data:
-        jid = to_int_seguro(j['id'])
-        if jid is not None:
-            jogos_dict[jid] = j
+    if not df_jogos_encerrados.empty:
+        for _, j in df_jogos_encerrados.iterrows():
+            jid = to_int_seguro(j['id'])
+            if jid is not None:
+                jogos_dict[jid] = j
 
     pontos = {}
     palpites_vistos = set()
 
-    # Varre os palpites exatamente como a aba VAR faz
+    # 3. Calcula as pontuações
     for p in palpites_res.data:
         usuario_original = str(p['usuario']).strip()
         user_norm = usuario_original.upper()
         jogo_id_norm = to_int_seguro(p['jogo_id'])
 
-        if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
-            continue
+        if juego_id_norm := jogo_id_norm or jogo_id_norm not in jogos_dict:
+            if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
+                continue
 
-        # Evita duplicados preservando o nome original de exibição
+        # Evita duplicados
         chave_unica = (user_norm, jogo_id_norm)
         if chave_unica in palpites_vistos:
             continue
@@ -356,33 +369,35 @@ def calcular_ranking(codigo_liga):
         j = jogos_dict[jogo_id_norm]
         pa = to_int_seguro(p['palpite_a'])
         pb = to_int_seguro(p['palpite_b'])
-        ra = to_int_seguro(j['gols_a'])
-        rb = to_int_seguro(j['gols_b'])
+        
+        # Busca dinâmica de gols para não quebrar
+        col_a = 'resultado_a' if 'resultado_a' in j else 'gols_a'
+        col_b = 'resultado_b' if 'resultado_b' in j else 'gols_b'
+        ra = to_int_seguro(j.get(col_a))
+        rb = to_int_seguro(j.get(col_b))
 
         if pa is None or pb is None or ra is None or rb is None:
             continue
 
-        # Matemática dos pontos
         pts = 0
         if pa == ra and pb == rb:
             pts = 3
         elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
             pts = 1
 
-        # Acumula os pontos mapeando pelo nome correto digitado pelo usuário
         if usuario_original not in pontos:
             pontos[usuario_original] = 0
         pontos[usuario_original] += pts
 
-    # Garante que mesmo quem não pontuou mas está na liga apareça com 0
+    # Garante a presença de todos os membros da liga no DataFrame final
     df_membros = get_todos_membros_liga_global()
     if not df_membros.empty:
         membros_da_liga = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()
         for m in membros_da_liga:
-            if m.strip() not in pontos:
-                pontos[m.strip()] = 0
+            nome_limpo = m.strip()
+            if nome_limpo not in pontos:
+                pontos[nome_limpo] = 0
 
-    # Cria o DataFrame final do ranking
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos'])
     df = df.sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
