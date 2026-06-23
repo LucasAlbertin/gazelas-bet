@@ -447,12 +447,12 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
             continue
 
-       j = jogos_dict[jogo_id_norm]
+      if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
+            continue
+
+        j = jogos_dict[jogo_id_norm]
         pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
-        
-        # AJUSTE: Mudando de 'gols_a'/'gols_b' para os nomes reais do seu banco
-        ra = to_int_seguro(j.get('resultado_a'))
-        rb = to_int_seguro(j.get('resultado_b'))
+        ra, rb = to_int_seguro(j.get('resultado_a')), to_int_seguro(j.get('resultado_b'))
 
         if None in (pa, pb, ra, rb):
             continue
@@ -481,7 +481,6 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO",
             "ordenador_data": j.get('datetime_convertido', datetime.min)
         })
-
     # Ordenação cronológica garantida usando o datetime real do jogo
     if detalhes:
         df_ordenador = pd.DataFrame(detalhes)
