@@ -387,31 +387,16 @@ def calcular_ranking(codigo_liga):
     return df
     
 def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
-    """Gera o detalhamento jogo-a-jogo usado pela aba VAR.
-
-    Faz a MESMA matemática de calcular_ranking, mas devolvendo cada linha
-    individual (em vez de só o total), além de duas listas de alerta:
-
-    - duplicatas: pares (usuario, jogo_id) que aparecem mais de uma vez na
-      tabela `palpites` — sintoma de upsert sem unique constraint.
-    - usuarios_sem_vinculo: jogadores que têm palpite salvo nesta liga mas
-      NÃO aparecem em `membros_liga` para essa liga. Esses pontos existem
-      no banco mas são ignorados pelo ranking, porque calcular_ranking só
-      soma pontos de quem está no dicionário de membros oficiais. Esta é
-      a causa mais comum de "meu ponto não foi contado".
-
-    Se usuario_filtro for informado, retorna o detalhamento apenas desse
-    jogador (mas duplicatas/usuarios_sem_vinculo continuam globais da liga).
-    """
+    """Gera o detalhamento jogo-a-jogo usado pela aba VAR de forma blindada contra caixa alta/baixa."""
     cod = codigo_liga.strip().upper()
-    mapa_nomes = get_mapa_nomes_canonicos()
-    usuario_filtro_norm = normalizar_usuario(usuario_filtro, mapa_nomes) if usuario_filtro else None
-
     df_membros = get_todos_membros_liga_global()
-    membros_brutos = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
-    membros_da_liga = set(normalizar_usuario(m, mapa_nomes) for m in membros_brutos)
+    
+    # Normaliza a lista de membros oficiais em maiúsculo para comparação
+    membros_da_liga = set(
+        [str(m).strip().upper() for m in df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()]
+    ) if not df_membros.empty else set()
 
-    jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b, data_hora").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
+    jogos_res = supabase.table("jogos").select("id, time_a, time_b, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
     jogos_dict = {}
@@ -425,22 +410,29 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
     usuarios_sem_vinculo = set()
     vistos = set()
 
+    # Se houver filtro de usuário, padroniza para maiúsculo também
+    usuario_filtro_norm = str(usuario_filtro).strip().upper() if usuario_filtro else None
+
     for p in palpites_res.data:
-        usuario_p = normalizar_usuario(p['usuario'], mapa_nomes)
+        # Pega o nome do jogador original e limpa/padroniza em maiúsculo para processar
+        usuario_original = str(p['usuario']).strip()
+        usuario_p = usuario_original.upper()
         jogo_id_norm = to_int_seguro(p['jogo_id'])
 
         if usuario_p not in membros_da_liga:
-            usuarios_sem_vinculo.add(usuario_p)
+            usuarios_sem_vinculo.add(usuario_original)
 
         if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
+        # Evita duplicidades usando o nome padronizado
         chave = (usuario_p, jogo_id_norm)
         if chave in vistos:
-            duplicatas.append(f"{usuario_p} — jogo #{jogo_id_norm}")
+            duplicatas.append(f"{usuario_original} — jogo #{jogo_id_norm}")
             continue
         vistos.add(chave)
 
+        # Se estiver filtrando na aba VAR, compara de forma segura
         if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
             continue
 
@@ -460,13 +452,8 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             pts = 1
             motivo = "👍 Acertou Tendência (1 pt)"
 
-        # Guarda o datetime real (para ordenar) e a versão formatada (para exibir)
-        data_ordenavel = pd.to_datetime(str(j.get('data_hora', '')).replace('T', ' '), errors='coerce')
-
         detalhes.append({
-            "_data_ordenavel": data_ordenavel,
-            "Data": data_ordenavel.strftime('%d/%m/%Y %H:%M') if pd.notnull(data_ordenavel) else "?",
-            "Jogador": usuario_p,
+            "Jogador": usuario_original,  # Mantém o nome visual original
             "Partida": f"{j['time_a']} x {j['time_b']}",
             "Palpite": f"{pa} x {pb}",
             "Resultado Real": f"{ra} x {rb}",
@@ -475,13 +462,8 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO"
         })
 
-    # Ordena do jogo mais antigo para o mais recente, para ninguém se perder
-    detalhes.sort(key=lambda d: (d["_data_ordenavel"] is pd.NaT, d["_data_ordenavel"]))
-    for d in detalhes:
-        del d["_data_ordenavel"]
-
     return {
-        "detalhes": detalhes,
+        "detalhes": detalles,
         "duplicatas": duplicatas,
         "usuarios_sem_vinculo": usuarios_sem_vinculo,
     }
@@ -1063,11 +1045,13 @@ else:
     with tab2:
         st.subheader("🏆 Classificação da Liga")
         
-        # --- DIAGNÓSTICO DO JAMESFRANCO NO RANKING ---
+       # --- DIAGNÓSTICO DO JAMESFRANCO NO RANKING ---
         diag_ranking = obter_diagnostico_pontos(liga)
         df_diag = pd.DataFrame(diag_ranking["detalhes"])
         if not df_diag.empty:
-            pts_james_ranking = df_diag[df_diag['Jogador'] == 'JamesFranco']['Pontos'].sum()
+            # Procura limpando qualquer diferença de letras maiúsculas/minúsculas
+            df_diag['Jogador_Upper'] = df_diag['Jogador'].str.strip().str.upper()
+            pts_james_ranking = df_diag[df_diag['Jogador_Upper'] == 'JAMESFRANCO']['Pontos'].sum()
             st.warning(f"🕵️‍♂️ DEBUG INTERNO: O diagnóstico geral calculou **{pts_james_ranking} pts** para o JamesFranco.")
         # ---------------------------------------------
 
