@@ -392,26 +392,22 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
     cod = codigo_liga.strip().upper()
     df_membros = get_todos_membros_liga_global()
     
-    # Normaliza a lista de membros oficiais em maiúsculo para comparação
     membros_da_liga = set(
         [str(m).strip().upper() for m in df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()]
     ) if not df_membros.empty else set()
 
-    # Em vez de puxar do banco cru, usamos o get_jogos() que já tem as datas convertidas e tratadas
     df_jogos_todos = get_jogos()
     
-    # Filtramos apenas os jogos que já possuem resultado oficial preenchido
     if not df_jogos_todos.empty:
-        df_jogos_encerrados = df_jogos_todos[
-            df_jogos_todos['gols_a'].notnull() & df_jogos_todos['gols_b'].notnull()
-        ]
+        # Garante a busca pelas colunas reais 'resultado_a' e 'resultado_b'
+        col_a = 'resultado_a' if 'resultado_a' in df_jogos_todos.columns else 'gols_a'
+        col_b = 'resultado_b' if 'resultado_b' in df_jogos_todos.columns else 'gols_b'
+        df_jogos_encerrados = df_jogos_todos[df_jogos_todos[col_a].notnull() & df_jogos_todos[col_b].notnull()]
     else:
         df_jogos_encerrados = pd.DataFrame()
 
-    # Puxa os palpites da liga
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
-    # Mapeia os jogos encerrados usando o ID como chave
     jogos_dict = {}
     if not df_jogos_encerrados.empty:
         for _, j in df_jogos_encerrados.iterrows():
@@ -437,7 +433,6 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
-        # Evita duplicidades
         chave = (usuario_p, jogo_id_norm)
         if chave in vistos:
             duplicatas.append(f"{usuario_original} — jogo #{jogo_id_norm}")
@@ -447,12 +442,12 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
             continue
 
-      if usuario_filtro_norm and usuario_p != usuario_filtro_norm:
-            continue
-
         j = jogos_dict[jogo_id_norm]
         pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
-        ra, rb = to_int_seguro(j.get('resultado_a')), to_int_seguro(j.get('resultado_b'))
+        
+        # Busca dinamicamente para evitar novos travamentos de coluna
+        ra = to_int_seguro(j.get('resultado_a') if 'resultado_a' in j else j.get('gols_a'))
+        rb = to_int_seguro(j.get('resultado_b') if 'resultado_b' in j else j.get('gols_b'))
 
         if None in (pa, pb, ra, rb):
             continue
@@ -466,7 +461,6 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             pts = 1
             motivo = "👍 Acertou Tendência (1 pt)"
 
-        # Buscamos a data formatada ou o datetime convertido para ordenar
         data_exibicao = j.get('data_apenas', 'Sem data')
         hora_exibicao = j.get('hora_apenas', '--:--')
 
@@ -481,7 +475,7 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO",
             "ordenador_data": j.get('datetime_convertido', datetime.min)
         })
-    # Ordenação cronológica garantida usando o datetime real do jogo
+
     if detalhes:
         df_ordenador = pd.DataFrame(detalhes)
         if 'ordenador_data' in df_ordenador.columns:
