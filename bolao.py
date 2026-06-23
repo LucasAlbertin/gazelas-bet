@@ -336,10 +336,10 @@ def calcular_ranking(codigo_liga):
     pontos = {m: 0 for m in membros_da_liga}
     jogos_dict = {}
     
-    for j in jogos_res.data:
-        jid = to_int_seguro(j['id'])
-        if jid is not None:
-            jogos_dict[jid] = j
+
+for j in jogos_res.data:
+    jid = int(j['id'])  
+    jogos_dict[jid] = j
 
     palpites_vistos = set()
 
@@ -347,9 +347,9 @@ def calcular_ranking(codigo_liga):
         usr_bruto = str(p['usuario']).strip()
         usr_upper = usr_bruto.upper()
         
-        jogo_id_norm = to_int_seguro(p['jogo_id'])
-        if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
-            continue
+jogo_id_norm = int(p['jogo_id'])  
+if jogo_id_norm not in jogos_dict:
+    continue
 
         # Encontra o nome correto correspondente na liga (case-insensitive)
         nome_membro_oficial = None
