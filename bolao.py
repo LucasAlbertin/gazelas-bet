@@ -453,14 +453,22 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
             motivo = "👍 Acertou Tendência (1 pt)"
 
         detalhes.append({
-            "Jogador": usuario_original,  # Mantém o nome visual original
+            "Jogador": usuario_original,
             "Partida": f"{j['time_a']} x {j['time_b']}",
             "Palpite": f"{pa} x {pb}",
             "Resultado Real": f"{ra} x {rb}",
             "Pontos": pts,
             "Critério": motivo,
-            "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO"
+            "Vínculo na Liga": "✅" if usuario_p in membros_da_liga else "🚨 SEM VÍNCULO",
+            "data_ordenacao": j.get('data_hora', '') # Campo oculto para ordenar
         })
+
+    # Transforma em DataFrame temporário para ordenar por data cronológica real do jogo
+    if detalhes:
+        df_ordenador = pd.DataFrame(detalhes)
+        if 'data_ordenacao' in df_ordenador.columns:
+            df_ordenador = df_ordenador.sort_values(by='data_ordenacao', ascending=True)
+            detalhes = df_ordenador.drop(columns=['data_ordenacao']).to_dict(orient='records')
 
     return {
         "detalhes": detalhes,
