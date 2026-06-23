@@ -288,19 +288,25 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
 
 @st.cache_data(ttl=30)
 def calcular_ranking(codigo_liga):
-    """Calcula o ranking de pontos de uma liga de forma blindada contra caixa alta/baixa."""
+    """Calcula o ranking de pontos de uma liga.
+
+    Esta função tem duas camadas de proteção contra os bugs que já
+    causaram pontuação incorreta no passado:
+
+    1. Normaliza jogo_id para int em ambos os lados (jogos e palpites),
+       evitando que uma comparação "5" == 5 falhe silenciosamente.
+    2. Ignora um segundo palpite do mesmo usuário para o mesmo jogo
+       (proteção contra linhas duplicadas herdadas de upserts antigos
+       sem unique constraint). A correção definitiva é aplicar a
+       constraint única no banco — ver `salvar_palpite`.
+    """
     cod = codigo_liga.strip().upper()
     df_membros = get_todos_membros_liga_global()
-    
-    # Cria a lista de membros oficiais normalizada em MAIÚSCULO
-    membros_filtrados = []
-    if not df_membros.empty:
-        membros_filtrados = [str(m).strip().upper() for m in df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()]
+    membros_filtrados = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
 
     jogos_res = supabase.table("jogos").select("id, gols_a, gols_b").not_.is_("gols_a", "null").not_.is_("gols_b", "null").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
-    # O dicionário interno do Python agora trabalha com chaves em MAIÚSCULO
     pontos = {m: 0 for m in membros_filtrados}
 
     jogos_dict = {}
@@ -313,12 +319,10 @@ def calcular_ranking(codigo_liga):
 
     for p in palpites_res.data:
         jogo_id_norm = to_int_seguro(p['jogo_id'])
-        user_norm = str(p['usuario']).strip().upper() # Normaliza o usuário do palpite
-
         if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
             continue
 
-        chave_unica = (user_norm, jogo_id_norm)
+        chave_unica = (p['usuario'], jogo_id_norm)
         if chave_unica in palpites_vistos:
             continue
         palpites_vistos.add(chave_unica)
@@ -339,19 +343,12 @@ def calcular_ranking(codigo_liga):
         elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
             pts = 1
 
-        if user_norm in pontos:
-            pontos[user_norm] += pts
+        if p['usuario'] in pontos:
+            pontos[p['usuario']] += pts
 
-    # Reconverte os nomes para exibição na tabela mantendo o formato original capitalizado
-    df_membros_nomes = df_membros[df_membros['liga_codigo'] == cod] if not df_membros.empty else pd.DataFrame()
-    mapa_nomes = {str(row['usuario_nome']).strip().upper(): row['usuario_nome'] for _, row in df_membros_nomes.iterrows()} if not df_membros_nomes.empty else {}
-    
-    pontos_finais = {mapa_nomes.get(m, m): pts for m, pts in pontos.items()}
-
-    df = pd.DataFrame(list(pontos_finais.items()), columns=['Participante', 'Points_Tmp']).rename(columns={'Points_Tmp': 'Pontos'})
-    df = df.sort_values(by='Pontos', ascending=False).reset_index(drop=True)
+    df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos']).sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
-    
+
 def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
     """Gera o detalhamento jogo-a-jogo usado pela aba VAR.
 
@@ -467,7 +464,7 @@ def get_todos_usuarios_global():
     res = supabase.table("usuarios").select("nome, senha").order("nome").execute()
     return pd.DataFrame(res.data)
 
-# --- GERENCIAMENTO  ---
+# --- GERENCIAMENTO ADMIN ---
 def deletar_usuario(nome_usuario):
     supabase.table("palpites").delete().eq("usuario", nome_usuario).execute()
     supabase.table("membros_liga").delete().eq("usuario_nome", nome_usuario).execute()
@@ -563,7 +560,7 @@ if 'liga_ativa' not in st.session_state: st.session_state.liga_ativa = None
 
 if st.session_state.usuario_logado is None and "cookie_user" in st.query_params:
     cookie_u = st.query_params["cookie_user"]
-    if cookie_u == "":
+    if cookie_u == "ADMIN":
         st.session_state.usuario_logado = "ADMIN"
     else:
         res_c = supabase.table("usuarios").select("nome").ilike("nome", cookie_u.strip()).execute()
@@ -661,6 +658,60 @@ elif st.session_state.usuario_logado == "ADMIN":
         st.rerun()
 
     jogos = get_jogos()
+
+    with st.expander("🔁 RECALCULAR PONTOS — Todas as Ligas (do início até agora)", expanded=False):
+        st.write(
+            "Refaz a contagem de pontos do zero, considerando **todos os jogos já "
+            "encerrados**, em **todas as ligas** cadastradas. Útil quando algum "
+            "jogador alega pontuação incorreta e você não quer entrar liga por liga."
+        )
+        if st.button("🔁 Recalcular Agora", type="primary", key="btn_recalculo_geral"):
+            st.cache_data.clear()  # força buscar tudo fresco do banco, sem cache
+            df_ligas_recalculo = get_todas_ligas()
+
+            if df_ligas_recalculo.empty:
+                st.info("Nenhuma liga cadastrada ainda.")
+            else:
+                total_inconsistencias = 0
+
+                for _, liga_row in df_ligas_recalculo.iterrows():
+                    cod_liga_rc = liga_row['codigo']
+                    nome_liga_rc = liga_row['nome']
+
+                    ranking_rc = calcular_ranking(cod_liga_rc)
+                    diag_rc = obter_diagnostico_pontos(cod_liga_rc)
+
+                    st.markdown(f"### 🛡️ {nome_liga_rc} (`{cod_liga_rc}`)")
+
+                    if not ranking_rc.empty:
+                        st.dataframe(ranking_rc, use_container_width=True, hide_index=True)
+                    else:
+                        st.caption("Nenhum membro ou nenhum ponto ainda nesta liga.")
+
+                    if diag_rc["usuarios_sem_vinculo"]:
+                        total_inconsistencias += len(diag_rc["usuarios_sem_vinculo"])
+                        st.error(
+                            f"🚨 {len(diag_rc['usuarios_sem_vinculo'])} jogador(es) com palpites "
+                            "nesta liga mas sem vínculo de membro — pontos NÃO entraram no "
+                            "ranking acima:"
+                        )
+                        for usr_o in sorted(diag_rc["usuarios_sem_vinculo"]):
+                            c_ro1, c_ro2 = st.columns([4, 1])
+                            c_ro1.write(f"👤 {usr_o}")
+                            if c_ro2.button("Corrigir", key=f"fix_recalc_{cod_liga_rc}_{usr_o}"):
+                                corrigir_vinculo_membro(usr_o, cod_liga_rc)
+                                st.rerun()
+
+                    if diag_rc["duplicatas"]:
+                        total_inconsistencias += len(diag_rc["duplicatas"])
+                        st.warning(f"⚠️ {len(diag_rc['duplicatas'])} palpite(s) duplicado(s) detectado(s) nesta liga.")
+
+                    st.markdown("<hr style='border-color:rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
+
+                if total_inconsistencias == 0:
+                    st.success("✅ Recálculo concluído. Nenhuma inconsistência encontrada em nenhuma liga.")
+                else:
+                    st.warning(f"Recálculo concluído. {total_inconsistencias} inconsistência(s) encontrada(s) — corrija com os botões acima.")
 
     with st.expander("👥 Gerenciar Contas de Jogadores"):
         df_usuarios = get_todos_usuarios_global()
@@ -850,6 +901,7 @@ elif st.session_state.liga_ativa is None:
                     st.error(mensagem)
             else:
                 st.warning("O nome de usuário não pode ficar vazio!")
+
 # =========================================================
 # FLUXO 4: INTERIOR DE UMA LIGA SELECIONADA
 # =========================================================
@@ -928,7 +980,7 @@ else:
                             st.markdown("</div>", unsafe_allow_html=True)
 
             if not jogos_futuros_existentes:
-                st.info("Não hay novos jogos agendados abertos para palpites.")
+                st.info("Não há novos jogos agendados abertos para palpites.")
 
             st.markdown("<br><hr style='border-color:rgba(255,255,255,0.1);'><br>", unsafe_allow_html=True)
 
@@ -1002,7 +1054,7 @@ else:
     # 3. VAR — RECONTAGEM E CONFERÊNCIA DE PONTOS
     with tab_var:
         st.subheader("🔍 VAR — Conferência de Pontos")
-        st.caption("Veja exatamente como cada ponto seu foi (or não foi) contado, jogo a jogo.")
+        st.caption("Veja exatamente como cada ponto seu foi (ou não foi) contado. Jogos listados em ordem cronológica, do mais antigo para o mais recente, para ninguém se perder.")
 
         diag_proprio = obter_diagnostico_pontos(liga, usuario_filtro=user)
 
@@ -1027,46 +1079,9 @@ else:
         # ---------------------------------------------------
         if user == "ADMIN" or user == "Admin":
             st.markdown("---")
-            st.markdown("### 🛡️ Ferramentas de Manutenção (Admin)")
+            st.markdown("### 🛡️ Recontagem Geral (Admin)")
+            st.caption("Use isto quando algum jogador alegar pontuação incorreta.")
 
-            # --- NOVO BLOCO CATA-BUGS DE IDs FANTASMAS ---
-            with st.expander("⚙️ Investigador de Palpites Órfãos (Jogos Fantasmas)", expanded=True):
-                st.write("Use esta ferramenta para encontrar palpites travados em IDs de jogos antigos.")
-
-                if st.button("🔍 Procurar Palpites Desalinhados", key="btn_manutencao_ids_var"):
-                    todas_partidas = supabase.table("jogos").select("id, time_a, time_b").execute()
-                    todos_palpites = supabase.table("palpites").select("id, usuario, jogo_id, palpite_a, palpite_b").execute()
-                    
-                    ids_jogos_reais = {j['id'] for j in todas_partidas.data}
-                    palpites_com_erro = []
-
-                    for p in todos_palpites.data:
-                        if p['jogo_id'] not in ids_jogos_reais:
-                            palpites_com_erro.append(p)
-
-                    if palpites_com_erro:
-                        st.error(f"🚨 Encontramos {len(palpites_com_erro)} palpites apontando para jogos que NÃO existem mais!")
-                        for err in palpites_com_erro:
-                            st.write(f"👤 **{err['usuario']}** | Palpite: {err['palpite_a']}x{err['palpite_b']} | ID Fantasma: `{err['jogo_id']}`")
-                        
-                        st.markdown("---")
-                        st.subheader("🔄 Mapear ID Fantasma para o ID Correto")
-                        
-                        id_velho = st.number_input("ID Fantasma (Errado):", step=1, key="id_fantasma_input_var")
-                        id_novo = st.number_input("ID do Jogo Real (Certo):", step=1, key="id_real_input_var")
-                        
-                        if st.button("Migrar Palpites Agora", type="primary", key="btn_migrar_real"):
-                            if id_velho and id_novo:
-                                supabase.table("palpites").update({"jogo_id": int(id_novo)}).eq("jogo_id", int(id_velho)).execute()
-                                st.cache_data.clear()
-                                st.success(f"🎉 Palpites migrados com sucesso!")
-                                st.rerun()
-                    else:
-                        st.success("✅ Nenhum palpite órfão encontrado! Todos os palpites estão vinculados a jogos reais.")
-
-            st.markdown("---")
-            st.caption("Controle e recontagem de vínculos de participantes:")
-            
             diag_geral = obter_diagnostico_pontos(liga)
 
             if diag_geral["usuarios_sem_vinculo"]:
@@ -1088,7 +1103,8 @@ else:
             if diag_geral["duplicatas"]:
                 st.warning(
                     "⚠️ Palpites duplicados encontrados (mesmo jogador + mesmo jogo). "
-                    "Apenas o primeiro de cada par foi contado abaixo."
+                    "Apenas o primeiro de cada par foi contado abaixo. Para isso nunca mais "
+                    "ocorrer, aplique a unique constraint sugerida no código-fonte."
                 )
                 with st.popover("Ver duplicatas"):
                     for d in diag_geral["duplicatas"]:
