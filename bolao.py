@@ -316,7 +316,7 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
     df.rename(columns={'usuario': 'Participante', 'palpite_a': 'Gols A', 'palpite_b': 'Gols B'}, inplace=True)
     return df
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=1)
 def calcular_ranking(codigo_liga):
     """Calcula o ranking de pontos de forma direta pelos palpites, 
 
