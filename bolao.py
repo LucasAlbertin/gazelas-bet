@@ -1062,6 +1062,15 @@ else:
     # 2. RANKING
     with tab2:
         st.subheader("🏆 Classificação da Liga")
+        
+        # --- DIAGNÓSTICO DO JAMESFRANCO NO RANKING ---
+        diag_ranking = obter_diagnostico_pontos(liga)
+        df_diag = pd.DataFrame(diag_ranking["detalhes"])
+        if not df_diag.empty:
+            pts_james_ranking = df_diag[df_diag['Jogador'] == 'JamesFranco']['Pontos'].sum()
+            st.warning(f"🕵️‍♂️ DEBUG INTERNO: O diagnóstico geral calculou **{pts_james_ranking} pts** para o JamesFranco.")
+        # ---------------------------------------------
+
         if not ranking.empty:
             df_visual = ranking.copy()
             df_visual.insert(0, 'Posição', range(1, len(df_visual) + 1))
