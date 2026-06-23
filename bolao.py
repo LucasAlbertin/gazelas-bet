@@ -425,7 +425,7 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
 
     usuario_filtro_norm = str(usuario_filtro).strip().upper() if usuario_filtro else None
 
-    for p in templates_res := palpites_res.data:
+    for p in palpites_res.data:
         usuario_original = str(p['usuario']).strip()
         usuario_p = usuario_original.upper()
         jogo_id_norm = to_int_seguro(p['jogo_id'])
