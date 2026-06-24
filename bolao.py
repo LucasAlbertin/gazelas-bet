@@ -227,16 +227,17 @@ def calcular_ranking(codigo_liga):
     cod = codigo_liga.strip().upper()
 
     membros_res = supabase.table("membros_liga").select("usuario_nome").eq("liga_codigo", cod).execute()
-    jogos_res = supabase.table("jogos").select("*").execute()
-    palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).limit(10000).execute()
+    ranking_res = supabase.table("ranking_por_liga").select("usuario, pontos_automaticos").eq("liga_codigo", cod).execute()
     ajustes_res = supabase.table("ajustes_pontos").select("usuario_nome, pontos_ajuste").eq("liga_codigo", cod).execute()
 
     membros = [str(m['usuario_nome']).strip() for m in membros_res.data]
     pontos = {m: 0 for m in membros}
 
-    jogos_dict = {}
-    for j in jogos_res.data:
-        jogos_dict[int(j['id'])] = j
+    for r in ranking_res.data:
+        usr = str(r['usuario']).strip()
+        nome_oficial = next((m for m in membros if m.upper() == usr.upper()), None)
+        if nome_oficial:
+            pontos[nome_oficial] += int(r['pontos_automaticos'])
 
     for a in ajustes_res.data:
         usr = str(a['usuario_nome']).strip()
@@ -244,35 +245,9 @@ def calcular_ranking(codigo_liga):
         if nome_oficial:
             pontos[nome_oficial] += int(a['pontos_ajuste'])
 
-    vistos = set()
-    for p in palpites_res.data:
-        usr = str(p['usuario']).strip()
-        jid = int(p['jogo_id'])
-        chave = (usr.upper(), jid)
-        if chave in vistos or jid not in jogos_dict:
-            continue
-        vistos.add(chave)
-
-        nome_oficial = next((m for m in membros if m.upper() == usr.upper()), None)
-        if not nome_oficial:
-            continue
-
-        j = jogos_dict[jid]
-        pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
-        ra, rb = to_int_seguro(j.get('gols_a')), to_int_seguro(j.get('gols_b'))
-
-        if None in (pa, pb, ra, rb):
-            continue
-
-        if pa == ra and pb == rb:
-            pontos[nome_oficial] += 3
-        elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
-            pontos[nome_oficial] += 1
-
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos'])
     df = df.sort_values(by='Pontos', ascending=False).reset_index(drop=True)
     return df
-
 
 def corrigir_vinculo_membro(usuario_nome, codigo_liga):
     cod = codigo_liga.strip().upper()
