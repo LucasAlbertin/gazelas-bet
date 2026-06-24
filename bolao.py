@@ -978,7 +978,7 @@ else:
     user = st.session_state.usuario_logado
     liga = st.session_state.liga_ativa
     jogos = get_jogos()
-    ranking = calcular_ranking(liga)
+    ranking = calcular_ranking_direto_sql(liga)
 
     if st.button("🔙 Voltar para a Lista de Minhas Ligas"):
         st.session_state.liga_ativa = None
