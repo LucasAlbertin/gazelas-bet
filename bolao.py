@@ -342,11 +342,11 @@ def calcular_ranking(codigo_liga):
     return df
 
 
-def calcular_ranking_direto_sql(codigo_liga):
+def calcular_ranking(codigo_liga):
     cod = codigo_liga.strip().upper()
 
     jogos_res = supabase.table("jogos").select("*").execute()
-    palpites_res = supabase.table("palpites").select("*").eq("liga_codigo", cod).execute()
+    palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).limit(10000).execute()
     membros_res = supabase.table("membros_liga").select("usuario_nome").eq("liga_codigo", cod).execute()
     ajustes_res = supabase.table("ajustes_pontos").select("*").eq("liga_codigo", cod).execute()
 
@@ -1013,7 +1013,7 @@ else:
     c2.metric("⚽ Jogos Ativos", len(jogos))
     c3.metric("🏆 Líder da Liga", ranking.iloc[0]['Participante'] if not ranking.empty else "-")
 
-    tab1, tab2, tab_var, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "🔍 VAR", "👀 Espiar", "🌍 Copa", "📜 Regras"])
+    tab1, tab2, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras"])
 
     with tab1:
         if not jogos.empty:
@@ -1128,60 +1128,6 @@ else:
             st.code(texto_copia, language="text")
         else:
             st.info("Ainda não há pontos a exibir nesta liga.")
-
-    with tab_var:
-        st.subheader("🔍 VAR — Conferência de Pontos")
-        st.caption("Veja exatamente como cada ponto seu foi contado.")
-
-        diag_proprio = obter_diagnostico_pontos(liga, usuario_filtro=user)
-
-        if diag_proprio["usuarios_sem_vinculo"] and user in diag_proprio["usuarios_sem_vinculo"]:
-            st.error("🚨 Você tem palpites salvos nesta liga, mas seu vínculo de membro não está registrado. Avise o Admin.")
-
-        if diag_proprio["detalhes"]:
-            df_proprio = pd.DataFrame(diag_proprio["detalhes"]).drop(columns=["Jogador", "Vínculo na Liga"])
-            total_pts = df_proprio["Pontos"].sum()
-            st.metric("✅ Total conferido para você nesta liga", f"{total_pts} pts")
-            st.dataframe(df_proprio, use_container_width=True, hide_index=True)
-        else:
-            st.info("Ainda não há jogos com resultado oficial para conferir seus pontos.")
-
-        if user == "ADMIN" or user == "Admin":
-            st.markdown("---")
-            st.markdown("### 🛡️ Recontagem Geral (Admin)")
-            diag_geral = obter_diagnostico_pontos(liga)
-
-            if diag_geral["usuarios_sem_vinculo"]:
-                st.error(f"🚨 {len(diag_geral['usuarios_sem_vinculo'])} jogador(es) sem vínculo de membro:")
-                for usr_orfao in sorted(diag_geral["usuarios_sem_vinculo"]):
-                    c_o1, c_o2 = st.columns([4, 1])
-                    c_o1.write(f"👤 **{usr_orfao}**")
-                    if c_o2.button("Corrigir vínculo", key=f"fix_vinculo_{usr_orfao}"):
-                        if corrigir_vinculo_membro(usr_orfao, liga):
-                            st.success(f"✅ Vínculo de {usr_orfao} corrigido!")
-                            st.rerun()
-
-            if diag_geral["duplicatas"]:
-                st.warning("⚠️ Palpites duplicados encontrados.")
-                with st.popover("Ver duplicatas"):
-                    for d in diag_geral["duplicatas"]:
-                        st.write(f"• {d}")
-
-            if not diag_geral["usuarios_sem_vinculo"] and not diag_geral["duplicatas"]:
-                st.success("✅ Nenhuma inconsistência estrutural encontrada.")
-
-            if diag_geral["detalhes"]:
-                df_geral = pd.DataFrame(diag_geral["detalhes"])
-                jogador_sel = st.selectbox(
-                    "Conferir jogador específico:",
-                    ["Todos"] + sorted(df_geral['Jogador'].unique().tolist()),
-                    key="var_admin_filtro_jogador"
-                )
-                if jogador_sel != "Todos":
-                    df_geral = df_geral[df_geral['Jogador'] == jogador_sel]
-                st.dataframe(df_geral, use_container_width=True, hide_index=True)
-            else:
-                st.info("Nenhum palpite computável encontrado.")
 
     with tab3:
         st.subheader("👀 Espiar Adversários")
