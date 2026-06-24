@@ -212,13 +212,11 @@ def verificar_login(nome, senha):
         return res.data[0]['nome']
     return None
 
-@st.cache_data(ttl=15)
 def get_ligas_do_usuario(usuario):
     res = supabase.table("membros_liga").select("liga_codigo").eq("usuario_nome", usuario).execute()
     if not res.data: return []
     return [item['liga_codigo'] for item in res.data]
 
-@st.cache_data(ttl=15)
 def get_todos_membros_liga_global():
     res = supabase.table("membros_liga").select("usuario_nome, liga_codigo").execute()
     return pd.DataFrame(res.data)
@@ -270,7 +268,6 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
     df.rename(columns={'usuario': 'Participante', 'palpite_a': 'Gols A', 'palpite_b': 'Gols B'}, inplace=True)
     return df
 
-@st.cache_data(ttl=5)
 def calcular_ranking(codigo_liga):
     cod = codigo_liga.strip().upper()
 
@@ -632,9 +629,9 @@ elif st.session_state.usuario_logado == "ADMIN":
 
     with st.expander("🔁 RECALCULAR PONTOS — Todas as Ligas", expanded=False):
         if st.button("🔁 Recalcular Agora", type="primary", key="btn_recalculo_geral"):
-            st.cache_data.clear()
-            df_ligas_recalculo = get_todas_ligas()
-
+    st.cache_data.clear()
+    st.rerun()  
+    
             if df_ligas_recalculo.empty:
                 st.info("Nenhuma liga cadastrada ainda.")
             else:
