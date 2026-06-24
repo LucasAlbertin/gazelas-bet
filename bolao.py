@@ -627,50 +627,42 @@ elif st.session_state.usuario_logado == "ADMIN":
 
     jogos = get_jogos()
 
-    with st.expander("🔁 RECALCULAR PONTOS — Todas as Ligas", expanded=False):
-        if st.button("🔁 Recalcular Agora", type="primary", key="btn_recalculo_geral"):
-    st.cache_data.clear()
-    st.rerun()  
-    
-            if df_ligas_recalculo.empty:
-                st.info("Nenhuma liga cadastrada ainda.")
-            else:
-                total_inconsistencias = 0
+   with st.expander("🔁 RECALCULAR PONTOS — Todas as Ligas", expanded=False):
+    if st.button("🔁 Recalcular Agora", type="primary", key="btn_recalculo_geral"):
+        st.cache_data.clear()
+        df_ligas_recalculo = get_todas_ligas()
 
-                for _, liga_row in df_ligas_recalculo.iterrows():
-                    cod_liga_rc = liga_row['codigo']
-                    nome_liga_rc = liga_row['nome']
-
-                    ranking_rc = calcular_ranking(cod_liga_rc)
-                    diag_rc = obter_diagnostico_pontos(cod_liga_rc)
-
-                    st.markdown(f"### 🛡️ {nome_liga_rc} (`{cod_liga_rc}`)")
-
-                    if not ranking_rc.empty:
-                        st.dataframe(ranking_rc, use_container_width=True, hide_index=True)
-                    else:
-                        st.caption("Nenhum membro ou nenhum ponto ainda nesta liga.")
-
-                    if diag_rc["usuarios_sem_vinculo"]:
-                        total_inconsistencias += len(diag_rc["usuarios_sem_vinculo"])
-                        st.error(f"🚨 {len(diag_rc['usuarios_sem_vinculo'])} jogador(es) com palpites nesta liga mas sem vínculo de membro:")
-                        for usr_o in sorted(diag_rc["usuarios_sem_vinculo"]):
-                            c_ro1, c_ro2 = st.columns([4, 1])
-                            c_ro1.write(f"👤 {usr_o}")
-                            if c_ro2.button("Corrigir", key=f"fix_recalc_{cod_liga_rc}_{usr_o}"):
-                                corrigir_vinculo_membro(usr_o, cod_liga_rc)
-                                st.rerun()
-
-                    if diag_rc["duplicatas"]:
-                        total_inconsistencias += len(diag_rc["duplicatas"])
-                        st.warning(f"⚠️ {len(diag_rc['duplicatas'])} palpite(s) duplicado(s) detectado(s).")
-
-                    st.markdown("<hr style='border-color:rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
-
-                if total_inconsistencias == 0:
-                    st.success("✅ Recálculo concluído. Nenhuma inconsistência encontrada.")
+        if df_ligas_recalculo.empty:
+            st.info("Nenhuma liga cadastrada ainda.")
+        else:
+            total_inconsistencias = 0
+            for _, liga_row in df_ligas_recalculo.iterrows():
+                cod_liga_rc = liga_row['codigo']
+                nome_liga_rc = liga_row['nome']
+                ranking_rc = calcular_ranking(cod_liga_rc)
+                diag_rc = obter_diagnostico_pontos(cod_liga_rc)
+                st.markdown(f"### 🛡️ {nome_liga_rc} (`{cod_liga_rc}`)")
+                if not ranking_rc.empty:
+                    st.dataframe(ranking_rc, use_container_width=True, hide_index=True)
                 else:
-                    st.warning(f"Recálculo concluído. {total_inconsistencias} inconsistência(s) encontrada(s).")
+                    st.caption("Nenhum membro ou nenhum ponto ainda nesta liga.")
+                if diag_rc["usuarios_sem_vinculo"]:
+                    total_inconsistencias += len(diag_rc["usuarios_sem_vinculo"])
+                    st.error(f"🚨 {len(diag_rc['usuarios_sem_vinculo'])} jogador(es) com palpites nesta liga mas sem vínculo de membro:")
+                    for usr_o in sorted(diag_rc["usuarios_sem_vinculo"]):
+                        c_ro1, c_ro2 = st.columns([4, 1])
+                        c_ro1.write(f"👤 {usr_o}")
+                        if c_ro2.button("Corrigir", key=f"fix_recalc_{cod_liga_rc}_{usr_o}"):
+                            corrigir_vinculo_membro(usr_o, cod_liga_rc)
+                            st.rerun()
+                if diag_rc["duplicatas"]:
+                    total_inconsistencias += len(diag_rc["duplicatas"])
+                    st.warning(f"⚠️ {len(diag_rc['duplicatas'])} palpite(s) duplicado(s) detectado(s).")
+                st.markdown("<hr style='border-color:rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
+            if total_inconsistencias == 0:
+                st.success("✅ Recálculo concluído. Nenhuma inconsistência encontrada.")
+            else:
+                st.warning(f"Recálculo concluído. {total_inconsistencias} inconsistência(s) encontrada(s).")
 
     with st.expander("👥 Gerenciar Contas de Jogadores"):
         df_usuarios = get_todos_usuarios_global()
