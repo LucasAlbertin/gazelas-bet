@@ -407,6 +407,14 @@ def calcular_ranking_direto_sql(codigo_liga):
     print(f"Ignorados sem resultado: {len(ignorados_sem_resultado)}")
     print(df.to_string())
 
+    # DEBUG TEMPORÁRIO — remover depois
+    st.write(f"**DEBUG GAZELAS:**")
+    st.write(f"Membros encontrados: {membros}")
+    st.write(f"Total palpites recebidos: {len(palpites_res.data)}")
+    st.write(f"Jogos no dict: {len(jogos_dict)}")
+    st.write(f"Ignorados sem membro: {set(ignorados_sem_membro)}")
+    st.write(f"Pontos calculados: {pontos}")
+
     return df
 
 def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
