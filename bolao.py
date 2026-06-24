@@ -14,7 +14,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Injeção de CSS Moderno com as Sanfonas e Cores Travadas
 st.markdown("""
 <style>
 .stApp {
@@ -24,9 +23,6 @@ st.markdown("""
 h1, h2, h3, h4 { color: white !important; }
 p, span, label { color: #E2E8F0 !important; }
 
-/* ==========================================
-   TRAVAMENTO DAS SANFONAS (ABERTAS E FECHADAS)
-   ========================================== */
 .stExpander {
     background-color: #151C32 !important;
     border: 1px solid rgba(255,255,255,0.08) !important;
@@ -63,9 +59,6 @@ p, span, label { color: #E2E8F0 !important; }
     font-weight: 600 !important;
 }
 
-/* ==========================================
-   RESTANTE DOS COMPONENTES VISUAIS
-   ========================================== */
 .card {
     background: #151C32;
     padding: 20px;
@@ -105,15 +98,8 @@ div[data-testid="stMetricLabel"] { font-size: 14px !important; color: #A0AEC0 !i
 
 
 # =========================================================
-# CREDENCIAIS — lidas de st.secrets, com fallback local
+# CREDENCIAIS
 # =========================================================
-# IMPORTANTE: para produção, configure isso em .streamlit/secrets.toml
-# (ou nos "Secrets" do Streamlit Cloud) em vez de deixar no código-fonte:
-#
-# SUPABASE_URL = "https://..."
-# SUPABASE_KEY = "..."
-# ADMIN_USER = "Admin"
-# ADMIN_PASS = "..."
 def get_secret(chave, padrao):
     try:
         return st.secrets[chave]
@@ -132,9 +118,6 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # HELPERS DE CONVERSÃO SEGURA
 # =========================================================
 def to_int_seguro(valor, padrao=None):
-    """Converte qualquer valor (int, float, str, None) para int de forma segura.
-    Evita que palpites/resultados com tipos inconsistentes (ex: '2' vs 2)
-    quebrem o cálculo de pontos ou sejam ignorados silenciosamente."""
     try:
         if valor is None:
             return padrao
@@ -145,17 +128,6 @@ def to_int_seguro(valor, padrao=None):
 
 @st.cache_data(ttl=60)
 def get_mapa_nomes_canonicos():
-    """Mapeia qualquer variação de maiúsculas/espaços de um nome de usuário
-    para o nome EXATO cadastrado na tabela `usuarios`.
-
-    Resolve um bug sutil: comparações de texto no Postgres são
-    case-sensitive. Se o mesmo jogador acabou salvo como 'JamesFranco' numa
-    tabela e 'jamesfranco' em outra (ex: digitou diferente ao ingressar
-    numa liga, ou um upsert antigo gravou com caixa diferente), o sistema
-    passa a tratá-los como duas pessoas distintas — e os pontos de uma
-    "grafia" nunca somam com os da outra. Usamos a tabela `usuarios` como
-    fonte da verdade, pois é com ela que a pessoa efetivamente faz login.
-    """
     df = get_todos_usuarios_global()
     if df.empty:
         return {}
@@ -163,10 +135,6 @@ def get_mapa_nomes_canonicos():
 
 
 def normalizar_usuario(nome_bruto, mapa_canonico):
-    """Converte um nome de usuário (como veio do banco) para sua grafia
-    canônica, se houver uma correspondência case-insensitive em `usuarios`.
-    Caso não encontre (ex: usuário já foi excluído), devolve o nome original
-    apenas com espaços extras removidos."""
     if nome_bruto is None:
         return nome_bruto
     chave = str(nome_bruto).strip().lower()
@@ -265,23 +233,9 @@ def ingressar_na_liga(usuario, codigo_liga):
         return False
 
 def salvar_palpite(usuario, jogo_id, p_a, p_b, codigo_liga):
-    """Salva (ou atualiza) o palpite de um usuário para um jogo numa liga.
-
-    IMPORTANTE — REQUER UNIQUE CONSTRAINT NO BANCO:
-    Para o upsert resolver corretamente em "atualizar" (e não criar uma
-    linha duplicada a cada novo palpite), a tabela `palpites` precisa de
-    uma constraint única em (usuario, jogo_id, liga_codigo). Rode uma vez
-    no SQL editor do Supabase:
-
-        alter table palpites
-        add constraint palpites_unicos unique (usuario, jogo_id, liga_codigo);
-
-    Sem isso, cada vez que o usuário corrige um palpite, uma nova linha é
-    criada e o ranking soma pontos em duplicidade.
-    """
     cod = codigo_liga.strip().upper()
     nome_limpo = usuario.strip()
-    jogo_id_norm = to_int_seguro(jogo_id)
+    jogo_id_norm = int(jogo_id)
     pa_norm = to_int_seguro(p_a, 0)
     pb_norm = to_int_seguro(p_b, 0)
 
@@ -318,46 +272,41 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
 
 @st.cache_data(ttl=5)
 def calcular_ranking(codigo_liga):
-    """Calcula o ranking de pontos de forma blindada, aceitando variações de colunas e nomes."""
     cod = codigo_liga.strip().upper()
-    
+
     df_membros = get_todos_membros_liga_global()
     if df_membros.empty:
         return pd.DataFrame(columns=['Participante', 'Pontos'])
-        
+
     membros_brutos = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist()
     membros_da_liga = [str(m).strip() for m in membros_brutos]
-    membros_norm_set = {m.upper() for m in membros_da_liga}
 
-    # Puxa os jogos direto do banco
     jogos_res = supabase.table("jogos").select("*").execute()
     palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
 
     pontos = {m: 0 for m in membros_da_liga}
     jogos_dict = {}
-    
 
-for j in jogos_res.data:
-    jid = int(j['id'])  
-    jogos_dict[jid] = j
+    for j in jogos_res.data:
+        jid = int(j['id'])
+        jogos_dict[jid] = j
 
     palpites_vistos = set()
 
     for p in palpites_res.data:
         usr_bruto = str(p['usuario']).strip()
         usr_upper = usr_bruto.upper()
-        
-jogo_id_norm = int(p['jogo_id'])  
-if jogo_id_norm not in jogos_dict:
-    continue
 
-        # Encontra o nome correto correspondente na liga (case-insensitive)
+        jogo_id_norm = int(p['jogo_id'])
+        if jogo_id_norm not in jogos_dict:
+            continue
+
         nome_membro_oficial = None
         for m in membros_da_liga:
             if m.upper() == usr_upper:
                 nome_membro_oficial = m
                 break
-                
+
         if not nome_membro_oficial:
             continue
 
@@ -370,10 +319,8 @@ if jogo_id_norm not in jogos_dict:
 
         pa = to_int_seguro(p['palpite_a'])
         pb = to_int_seguro(p['palpite_b'])
-        
-        # SUPORTE DUPLO: Aceita tanto 'gols_a' quanto 'resultado_a' do banco
-        ra = to_int_seguro(j.get('resultado_a') if 'resultado_a' in j else j.get('gols_a'))
-        rb = to_int_seguro(j.get('resultado_b') if 'resultado_b' in j else j.get('gols_b'))
+        ra = to_int_seguro(j.get('gols_a'))
+        rb = to_int_seguro(j.get('gols_b'))
 
         if pa is None or pb is None or ra is None or rb is None:
             continue
@@ -392,9 +339,8 @@ if jogo_id_norm not in jogos_dict:
 
 
 def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
-    """Gera o detalhamento do VAR corrigindo o bug de mapeamento de colunas e nomes."""
     cod = codigo_liga.strip().upper()
-    
+
     df_membros = get_todos_membros_liga_global()
     membros_brutos = df_membros[df_membros['liga_codigo'] == cod]['usuario_nome'].tolist() if not df_membros.empty else []
     membros_da_liga = [str(m).strip() for m in membros_brutos]
@@ -405,9 +351,8 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
 
     jogos_dict = {}
     for j in jogos_res.data:
-        jid = to_int_seguro(j['id'])
-        if jid is not None:
-            jogos_dict[jid] = j
+        jid = int(j['id'])
+        jogos_dict[jid] = j
 
     detalhes = []
     duplicatas = []
@@ -419,12 +364,12 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
     for p in palpites_res.data:
         usr_original = str(p['usuario']).strip()
         usr_upper = usr_original.upper()
-        jogo_id_norm = to_int_seguro(p['jogo_id'])
+        jogo_id_norm = int(p['jogo_id'])
 
         if usr_upper not in membros_set_upper:
             usuarios_sem_vinculo.add(usr_original)
 
-        if jogo_id_norm is None or jogo_id_norm not in jogos_dict:
+        if jogo_id_norm not in jogos_dict:
             continue
 
         chave = (usr_upper, jogo_id_norm)
@@ -438,10 +383,8 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
 
         j = jogos_dict[jogo_id_norm]
         pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
-        
-        # SUPORTE DUPLO: Identifica dinamicamente a coluna de gols reais
-        ra = to_int_seguro(j.get('resultado_a') if 'resultado_a' in j else j.get('gols_a'))
-        rb = to_int_seguro(j.get('resultado_b') if 'resultado_b' in j else j.get('gols_b'))
+        ra = to_int_seguro(j.get('gols_a'))
+        rb = to_int_seguro(j.get('gols_b'))
 
         if None in (pa, pb, ra, rb):
             continue
@@ -478,11 +421,8 @@ def obter_diagnostico_pontos(codigo_liga, usuario_filtro=None):
         "duplicatas": duplicatas,
         "usuarios_sem_vinculo": usuarios_sem_vinculo,
     }
-    
+
 def corrigir_vinculo_membro(usuario_nome, codigo_liga):
-    """Cria o vínculo em membros_liga para um usuário que já tem palpites
-    na liga mas perdeu (ou nunca teve) o registro de membro. Isso faz os
-    pontos dele voltarem a entrar no ranking imediatamente."""
     cod = codigo_liga.strip().upper()
     try:
         supabase.table("membros_liga").insert({"usuario_nome": usuario_nome, "liga_codigo": cod}).execute()
@@ -496,7 +436,6 @@ def get_todos_usuarios_global():
     res = supabase.table("usuarios").select("nome, senha").order("nome").execute()
     return pd.DataFrame(res.data)
 
-# --- GERENCIAMENTO ADMIN ---
 def deletar_usuario(nome_usuario):
     supabase.table("palpites").delete().eq("usuario", nome_usuario).execute()
     supabase.table("membros_liga").delete().eq("usuario_nome", nome_usuario).execute()
@@ -583,7 +522,7 @@ def calcular_tabela_copa():
     return pd.DataFrame(list(tabela.values()))
 
 # =========================================================
-# GERENCIADOR DE SESSÃO E PERSISTÊNCIA SEGURA
+# GERENCIADOR DE SESSÃO
 # =========================================================
 st.markdown("<div style='text-align:center;'><h1>⚽ GAZELAS BET</h1></div>", unsafe_allow_html=True)
 
@@ -602,7 +541,7 @@ if st.session_state.usuario_logado is None and "cookie_user" in st.query_params:
             del st.query_params["cookie_user"]
 
 # =========================================================
-# FLUXO 1: DESLOGADO (MANUAL INICIAL + REGRAS)
+# FLUXO 1: DESLOGADO
 # =========================================================
 if st.session_state.usuario_logado is None:
     st.markdown("""
@@ -679,7 +618,7 @@ if st.session_state.usuario_logado is None:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================================================
-# FLUXO 2: ADMIN (PAINEL MASTER GLOBAL)
+# FLUXO 2: ADMIN
 # =========================================================
 elif st.session_state.usuario_logado == "ADMIN":
     st.error("🤖 MESTRE GLOBAL — PAINEL DE CONTROLE SUPREMO")
@@ -691,14 +630,9 @@ elif st.session_state.usuario_logado == "ADMIN":
 
     jogos = get_jogos()
 
-    with st.expander("🔁 RECALCULAR PONTOS — Todas as Ligas (do início até agora)", expanded=False):
-        st.write(
-            "Refaz a contagem de pontos do zero, considerando **todos os jogos já "
-            "encerrados**, em **todas as ligas** cadastradas. Útil quando algum "
-            "jogador alega pontuação incorreta e você não quer entrar liga por liga."
-        )
+    with st.expander("🔁 RECALCULAR PONTOS — Todas as Ligas", expanded=False):
         if st.button("🔁 Recalcular Agora", type="primary", key="btn_recalculo_geral"):
-            st.cache_data.clear()  # força buscar tudo fresco do banco, sem cache
+            st.cache_data.clear()
             df_ligas_recalculo = get_todas_ligas()
 
             if df_ligas_recalculo.empty:
@@ -722,11 +656,7 @@ elif st.session_state.usuario_logado == "ADMIN":
 
                     if diag_rc["usuarios_sem_vinculo"]:
                         total_inconsistencias += len(diag_rc["usuarios_sem_vinculo"])
-                        st.error(
-                            f"🚨 {len(diag_rc['usuarios_sem_vinculo'])} jogador(es) com palpites "
-                            "nesta liga mas sem vínculo de membro — pontos NÃO entraram no "
-                            "ranking acima:"
-                        )
+                        st.error(f"🚨 {len(diag_rc['usuarios_sem_vinculo'])} jogador(es) com palpites nesta liga mas sem vínculo de membro:")
                         for usr_o in sorted(diag_rc["usuarios_sem_vinculo"]):
                             c_ro1, c_ro2 = st.columns([4, 1])
                             c_ro1.write(f"👤 {usr_o}")
@@ -736,14 +666,14 @@ elif st.session_state.usuario_logado == "ADMIN":
 
                     if diag_rc["duplicatas"]:
                         total_inconsistencias += len(diag_rc["duplicatas"])
-                        st.warning(f"⚠️ {len(diag_rc['duplicatas'])} palpite(s) duplicado(s) detectado(s) nesta liga.")
+                        st.warning(f"⚠️ {len(diag_rc['duplicatas'])} palpite(s) duplicado(s) detectado(s).")
 
                     st.markdown("<hr style='border-color:rgba(255,255,255,0.08);'>", unsafe_allow_html=True)
 
                 if total_inconsistencias == 0:
-                    st.success("✅ Recálculo concluído. Nenhuma inconsistência encontrada em nenhuma liga.")
+                    st.success("✅ Recálculo concluído. Nenhuma inconsistência encontrada.")
                 else:
-                    st.warning(f"Recálculo concluído. {total_inconsistencias} inconsistência(s) encontrada(s) — corrija com os botões acima.")
+                    st.warning(f"Recálculo concluído. {total_inconsistencias} inconsistência(s) encontrada(s).")
 
     with st.expander("👥 Gerenciar Contas de Jogadores"):
         df_usuarios = get_todos_usuarios_global()
@@ -751,7 +681,7 @@ elif st.session_state.usuario_logado == "ADMIN":
             for _, row_u in df_usuarios.iterrows():
                 c_u1, c_u2, c_u3, c_u4 = st.columns([3, 2, 2, 1])
                 c_u1.write(f"👤 {row_u['nome']}")
-                c_u2.write("🔑 ••••••••")  # senha não é exibida em texto puro por segurança
+                c_u2.write("🔑 ••••••••")
 
                 with c_u3.popover("Redefinir senha"):
                     nova_s = st.text_input("Nova senha:", type="password", key=f"reset_pass_{row_u['nome']}")
@@ -837,7 +767,7 @@ elif st.session_state.usuario_logado == "ADMIN":
             st.rerun()
 
 # =========================================================
-# FLUXO 3: LOGADO - LISTAGEM DE LIGAS SANFONADA
+# FLUXO 3: LOGADO - LISTAGEM DE LIGAS
 # =========================================================
 elif st.session_state.liga_ativa is None:
     user = st.session_state.usuario_logado
@@ -865,7 +795,7 @@ elif st.session_state.liga_ativa is None:
                     st.session_state.liga_ativa = row_m['codigo']
                     st.rerun()
         else:
-            st.info("Você ainda não entrou em nenhuma liga clássica. Entre ou crie uma abaixo!")
+            st.info("Você ainda não entrou em nenhuma liga. Entre ou crie uma abaixo!")
 
     with st.expander("🔍 Ligas Existentes no Banco"):
         df_todas = get_todas_ligas()
@@ -899,7 +829,7 @@ elif st.session_state.liga_ativa is None:
         if st.button("Registrar Liga Clássica"):
             if n_liga and c_liga:
                 if verificar_liga_existente(c_liga):
-                    st.error("🚨 Esse código já existe! Escolha outro código de acesso.")
+                    st.error("🚨 Esse código já existe! Escolha outro.")
                 else:
                     criar_nova_liga(n_liga, c_liga, user)
                     st.success(f"Liga '{n_liga}' criada!")
@@ -907,18 +837,17 @@ elif st.session_state.liga_ativa is None:
             else:
                 st.warning("Preencha todos os campos para fundar a liga.")
 
-    with st.expander("⚙️ Configurações da Conta (Alterar Nome ou Senha)"):
-        st.markdown("<p style='font-size:13px; color:#A0AEC0;'>Deseja alterar seus dados de acesso? Preencha os campos abaixo:</p>", unsafe_allow_html=True)
+    with st.expander("⚙️ Configurações da Conta"):
+        st.markdown("<p style='font-size:13px; color:#A0AEC0;'>Deseja alterar seus dados de acesso?</p>", unsafe_allow_html=True)
 
         novo_nome_input = st.text_input("Seu Nome de Usuário:", value=user, key="edit_profile_name")
-        nova_senha_input = st.text_input("Nova Senha (deixe em branco para manter a atual):", value="", type="password", key="edit_profile_pass")
+        nova_senha_input = st.text_input("Nova Senha (deixe em branco para manter):", value="", type="password", key="edit_profile_pass")
 
         if st.button("Salvar Alterações de Cadastro", type="secondary"):
             if novo_nome_input:
                 if nova_senha_input:
                     sucesso, mensagem = atualizar_dados_usuario(user, novo_nome_input, nova_senha_input)
                 else:
-                    # Mantém a senha atual, atualiza só o nome se necessário
                     res_u = supabase.table("usuarios").select("senha").eq("nome", user).execute()
                     senha_atual = res_u.data[0]['senha'] if res_u.data else ""
                     sucesso, mensagem = atualizar_dados_usuario(user, novo_nome_input, senha_atual)
@@ -935,7 +864,7 @@ elif st.session_state.liga_ativa is None:
                 st.warning("O nome de usuário não pode ficar vazio!")
 
 # =========================================================
-# FLUXO 4: INTERIOR DE UMA LIGA SELECIONADA
+# FLUXO 4: INTERIOR DE UMA LIGA
 # =========================================================
 else:
     user = st.session_state.usuario_logado
@@ -954,12 +883,9 @@ else:
     c2.metric("⚽ Jogos Ativos", len(jogos))
     c3.metric("🏆 Líder da Liga", ranking.iloc[0]['Participante'] if not ranking.empty else "-")
 
-    # =========================================================
-    # ABAS DO USUÁRIO FINAL
-    # =========================================================
     tab1, tab2, tab_var, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "🔍 VAR", "👀 Espiar", "🌍 Copa", "📜 Regras"])
 
-    # 1. ABA PALPITES
+    # 1. PALPITES
     with tab1:
         if not jogos.empty:
             p_u = get_palpites_usuario(user, liga)
@@ -982,7 +908,6 @@ else:
                     with st.expander(f"📅 Jogos de {dia} — Abertos", expanded=True):
                         for _, j in jogos_do_dia.iterrows():
                             st.markdown("<div class='card'>", unsafe_allow_html=True)
-
                             st.markdown(f"""
                             <div style='display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px;'>
                                 <span style='color: #00E676;'>🏆 {j.get('fase', 'Fase de Grupos')}</span>
@@ -999,7 +924,6 @@ else:
                             c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
                             with c1: st.write(f"**{j['time_a']}**")
                             with c5: st.write(f"**{j['time_b']}**")
-
                             with c2: pa_a = st.number_input(f"A_{j['id']}", min_value=0, value=v_a, label_visibility="collapsed")
                             with c3: st.write("X")
                             with c4: pa_b = st.number_input(f"B_{j['id']}", min_value=0, value=v_b, label_visibility="collapsed")
@@ -1015,21 +939,20 @@ else:
                 st.info("Não há novos jogos agendados abertos para palpites.")
 
             st.markdown("<br><hr style='border-color:rgba(255,255,255,0.1);'><br>", unsafe_allow_html=True)
-
             st.markdown("### 🔒 Jogos Anteriores / Encerrados")
+
             if len(dias_passados) > 0:
-                with st.expander("📁 Visualizar histórico de jogos encerrados nesta liga"):
+                with st.expander("📁 Visualizar histórico de jogos encerrados"):
                     for dia in reversed(list(dias_passados)):
                         jogos_do_dia_passado = jogos[(jogos['data_apenas'] == dia) & (jogos['ja_comecou'] == True)]
                         if not jogos_do_dia_passado.empty:
                             st.markdown(f"<div style='color:#A0AEC0; font-weight:bold; padding: 5px 0;'>📅 Rodada de {dia}</div>", unsafe_allow_html=True)
                             for _, j in jogos_do_dia_passado.iterrows():
                                 st.markdown("<div class='card' style='opacity: 0.75;'>", unsafe_allow_html=True)
-
                                 st.markdown(f"""
                                 <div style='display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;'>
                                     <span style='color: #94A3B8;'>🔒 {j.get('fase', 'Fase de Grupos')}</span>
-                                    <span style='color: #EF4444;'>⏱️ Iniciado às {j['hora_apenas']} (Cadeado trancado)</span>
+                                    <span style='color: #EF4444;'>⏱️ Iniciado às {j['hora_apenas']}</span>
                                 </div>
                                 """, unsafe_allow_html=True)
 
@@ -1041,7 +964,6 @@ else:
                                 c1, c2, c3, c4, c5 = st.columns([3, 1, 1, 1, 3])
                                 with c1: st.write(f"{j['time_a']}")
                                 with c5: st.write(f"{j['time_b']}")
-
                                 with c2: st.markdown(f"<div style='text-align:center; background:#1A202C; border-radius:5px; padding:3px;'><b>{v_a}</b></div>", unsafe_allow_html=True)
                                 with c3: st.write("X")
                                 with c4: st.markdown(f"<div style='text-align:center; background:#1A202C; border-radius:5px; padding:3px;'><b>{v_b}</b></div>", unsafe_allow_html=True)
@@ -1052,7 +974,7 @@ else:
                                     st.markdown("<div style='text-align:center; font-size:12px; color:#EF4444;'>❌ Você perdeu o prazo deste jogo.</div>", unsafe_allow_html=True)
                                 st.markdown("</div>", unsafe_allow_html=True)
 
-   # 2. RANKING
+    # 2. RANKING
     with tab2:
         st.subheader("🏆 Classificação da Liga")
 
@@ -1084,20 +1006,15 @@ else:
         else:
             st.info("Ainda não há pontos a exibir nesta liga.")
 
-    # 3. VAR — RECONTAGEM E CONFERÊNCIA DE PONTOS
+    # 3. VAR
     with tab_var:
         st.subheader("🔍 VAR — Conferência de Pontos")
-        st.caption("Veja exatamente como cada ponto seu foi (ou não foi) contado. Jogos listados em ordem cronológica, do mais antigo para o mais recente, para ninguém se perder.")
+        st.caption("Veja exatamente como cada ponto seu foi contado.")
 
         diag_proprio = obter_diagnostico_pontos(liga, usuario_filtro=user)
 
         if diag_proprio["usuarios_sem_vinculo"] and user in diag_proprio["usuarios_sem_vinculo"]:
-            st.error(
-                "🚨 Encontramos o problema: você tem palpites salvos nesta liga, mas seu "
-                "vínculo de membro com a liga não está registrado corretamente. Por isso "
-                "seus pontos não aparecem no ranking. Avise o Admin — ele tem um botão "
-                "para corrigir isso na hora, na seção abaixo."
-            )
+            st.error("🚨 Você tem palpites salvos nesta liga, mas seu vínculo de membro não está registrado. Avise o Admin.")
 
         if diag_proprio["detalhes"]:
             df_proprio = pd.DataFrame(diag_proprio["detalhes"]).drop(columns=["Jogador", "Vínculo na Liga"])
@@ -1107,44 +1024,32 @@ else:
         else:
             st.info("Ainda não há jogos com resultado oficial para conferir seus pontos.")
 
-        # ---------------------------------------------------
-        # FERRAMENTAS EXTRAS — SÓ PARA O ADMIN
-        # ---------------------------------------------------
         if user == "ADMIN" or user == "Admin":
             st.markdown("---")
             st.markdown("### 🛡️ Recontagem Geral (Admin)")
-            st.caption("Use isto quando algum jogador alegar pontuação incorreta.")
 
             diag_geral = obter_diagnostico_pontos(liga)
 
             if diag_geral["usuarios_sem_vinculo"]:
-                st.error(
-                    f"🚨 {len(diag_geral['usuarios_sem_vinculo'])} jogador(es) têm palpites "
-                    "nesta liga mas SEM vínculo de membro — os pontos deles estão sendo "
-                    "ignorados no ranking. Corrija com um clique:"
-                )
+                st.error(f"🚨 {len(diag_geral['usuarios_sem_vinculo'])} jogador(es) sem vínculo de membro:")
                 for usr_orfao in sorted(diag_geral["usuarios_sem_vinculo"]):
                     c_o1, c_o2 = st.columns([4, 1])
                     c_o1.write(f"👤 **{usr_orfao}**")
                     if c_o2.button("Corrigir vínculo", key=f"fix_vinculo_{usr_orfao}"):
                         if corrigir_vinculo_membro(usr_orfao, liga):
-                            st.success(f"✅ Vínculo de {usr_orfao} corrigido! Pontos serão recontados automaticamente.")
+                            st.success(f"✅ Vínculo de {usr_orfao} corrigido!")
                             st.rerun()
                         else:
-                            st.error("Não foi possível corrigir. Verifique se o vínculo já existe.")
+                            st.error("Não foi possível corrigir.")
 
             if diag_geral["duplicatas"]:
-                st.warning(
-                    "⚠️ Palpites duplicados encontrados (mesmo jogador + mesmo jogo). "
-                    "Apenas o primeiro de cada par foi contado abaixo. Para isso nunca mais "
-                    "ocorrer, aplique a unique constraint sugerida no código-fonte."
-                )
+                st.warning("⚠️ Palpites duplicados encontrados.")
                 with st.popover("Ver duplicatas"):
                     for d in diag_geral["duplicatas"]:
                         st.write(f"• {d}")
 
             if not diag_geral["usuarios_sem_vinculo"] and not diag_geral["duplicatas"]:
-                st.success("✅ Nenhuma inconsistência estrutural encontrada nesta liga.")
+                st.success("✅ Nenhuma inconsistência estrutural encontrada.")
 
             if diag_geral["detalhes"]:
                 df_geral = pd.DataFrame(diag_geral["detalhes"])
@@ -1157,13 +1062,14 @@ else:
                     df_geral = df_geral[df_geral['Jogador'] == jogador_sel]
                 st.dataframe(df_geral, use_container_width=True, hide_index=True)
             else:
-                st.info("Nenhum palpite computável encontrado para jogos com resultado nesta liga.")
+                st.info("Nenhum palpite computável encontrado.")
 
-    # 4. ESPIAR ADVERSÁRIOS
+    # 4. ESPIAR
     with tab3:
         st.subheader("👀 Espiar Adversários")
         if not jogos.empty:
-            fuso_br = pytz.timezone('America/Sao_Paulo'); agora_br = datetime.now(fuso_br).replace(tzinfo=None)
+            fuso_br = pytz.timezone('America/Sao_Paulo')
+            agora_br = datetime.now(fuso_br).replace(tzinfo=None)
             for dia in jogos['data_apenas'].unique():
                 with st.expander(f"📅 Jogos do dia {dia}"):
                     for _, j_i in jogos[jogos['data_apenas'] == dia].iterrows():
@@ -1186,10 +1092,11 @@ else:
                                     else: st.write(f"⏳ {txt}")
                                 for usr in ranking['Participante'].tolist():
                                     if usr not in users_p: st.write(f"⚪ **{usr}** não palpitou.")
-                        else: st.warning("🔒 Oculto até o início do jogo.")
+                        else:
+                            st.warning("🔒 Oculto até o início do jogo.")
                         st.markdown("---")
 
-    # 5. TABELA COPA MUNDIAL
+    # 5. COPA
     with tab_copa:
         df_copa = calcular_tabela_copa()
         if not df_copa.empty:
@@ -1214,6 +1121,6 @@ else:
         </ul></div>
         """, unsafe_allow_html=True)
 
-# RODAPÉ CRÉDITOS
-APP_VERSION = "v1.3 — normalização de nomes + VAR + recálculo geral (2026-06-23)"
+# RODAPÉ
+APP_VERSION = "v1.4 — correção de tipo bigint/integer no join de pontuação (2026-06-23)"
 st.markdown(f"<div class='footer'>CRIADO POR LUCAS ALBERTIN • GAZELAS BET 2026<br><span style='opacity:0.5;'>{APP_VERSION}</span></div>", unsafe_allow_html=True)
