@@ -724,55 +724,53 @@ elif st.session_state.usuario_logado == "ADMIN":
                         st.caption("ℹ️ Nenhum participante ingressou nesta liga ainda.")
                 st.markdown("<hr style='margin:15px 0; border-color:rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
 
-    with st.expander("✏️ Ajuste Manual de Pontos"):
-    st.caption("Use para corrigir pontos perdidos por bug, cache ou qualquer inconsistência.")
-    
-    df_ligas_adj = get_todas_ligas()
-    df_membros_adj = get_todos_membros_liga_global()
-    
-    if not df_ligas_adj.empty:
-        liga_sel = st.selectbox("Liga:", df_ligas_adj['codigo'].tolist(), key="adj_liga")
-        
-        membros_sel = []
-        if not df_membros_adj.empty:
-            membros_sel = df_membros_adj[df_membros_adj['liga_codigo'] == liga_sel]['usuario_nome'].tolist()
-        
-        if membros_sel:
-            usuario_sel = st.selectbox("Jogador:", sorted(membros_sel), key="adj_usuario")
-            pontos_adj = st.number_input("Pontos a adicionar (use negativo para remover):", value=0, step=1, key="adj_pontos")
-            motivo_adj = st.text_input("Motivo (ex: jogos 22/06 não computados):", key="adj_motivo")
-            
-            # Mostra ajustes já aplicados nessa liga
-            ajustes_atuais = supabase.table("ajustes_pontos").select("*").eq("liga_codigo", liga_sel).execute()
-            if ajustes_atuais.data:
-                st.markdown("**Ajustes já aplicados nesta liga:**")
-                df_adj = pd.DataFrame(ajustes_atuais.data)
-                st.dataframe(df_adj[['usuario_nome', 'pontos_ajuste', 'motivo', 'created_at']], 
-                           use_container_width=True, hide_index=True)
-                
-                # Botão para remover ajuste específico
-                ids_adj = [str(a['id']) for a in ajustes_atuais.data]
-                if ids_adj:
-                    adj_del = st.selectbox("Remover ajuste pelo ID:", ["—"] + ids_adj, key="adj_del")
-                    if adj_del != "—" and st.button("Remover este ajuste", key="btn_del_adj"):
-                        supabase.table("ajustes_pontos").delete().eq("id", int(adj_del)).execute()
-                        st.success("Ajuste removido!")
+   with st.expander("✏️ Ajuste Manual de Pontos"):
+        st.caption("Use para corrigir pontos perdidos por bug, cache ou qualquer inconsistência.")
+
+        df_ligas_adj = get_todas_ligas()
+        df_membros_adj = get_todos_membros_liga_global()
+
+        if not df_ligas_adj.empty:
+            liga_sel = st.selectbox("Liga:", df_ligas_adj['codigo'].tolist(), key="adj_liga")
+
+            membros_sel = []
+            if not df_membros_adj.empty:
+                membros_sel = df_membros_adj[df_membros_adj['liga_codigo'] == liga_sel]['usuario_nome'].tolist()
+
+            if membros_sel:
+                usuario_sel = st.selectbox("Jogador:", sorted(membros_sel), key="adj_usuario")
+                pontos_adj = st.number_input("Pontos a adicionar (use negativo para remover):", value=0, step=1, key="adj_pontos")
+                motivo_adj = st.text_input("Motivo (ex: jogos 22/06 não computados):", key="adj_motivo")
+
+                ajustes_atuais = supabase.table("ajustes_pontos").select("*").eq("liga_codigo", liga_sel).execute()
+                if ajustes_atuais.data:
+                    st.markdown("**Ajustes já aplicados nesta liga:**")
+                    df_adj = pd.DataFrame(ajustes_atuais.data)
+                    st.dataframe(df_adj[['usuario_nome', 'pontos_ajuste', 'motivo', 'created_at']],
+                                use_container_width=True, hide_index=True)
+
+                    ids_adj = [str(a['id']) for a in ajustes_atuais.data]
+                    if ids_adj:
+                        adj_del = st.selectbox("Remover ajuste pelo ID:", ["—"] + ids_adj, key="adj_del")
+                        if adj_del != "—" and st.button("Remover este ajuste", key="btn_del_adj"):
+                            supabase.table("ajustes_pontos").delete().eq("id", int(adj_del)).execute()
+                            st.success("Ajuste removido!")
+                            st.rerun()
+
+                if st.button("Aplicar Ajuste", type="primary", key="btn_aplicar_adj"):
+                    if pontos_adj != 0:
+                        supabase.table("ajustes_pontos").insert({
+                            "usuario_nome": usuario_sel,
+                            "liga_codigo": liga_sel,
+                            "pontos_ajuste": int(pontos_adj),
+                            "motivo": motivo_adj.strip() if motivo_adj else "Ajuste manual"
+                        }).execute()
+                        st.success(f"✅ {pontos_adj:+d} pontos aplicados para {usuario_sel} na liga {liga_sel}!")
                         st.rerun()
-            
-            if st.button("Aplicar Ajuste", type="primary", key="btn_aplicar_adj"):
-                if pontos_adj != 0:
-                    supabase.table("ajustes_pontos").insert({
-                        "usuario_nome": usuario_sel,
-                        "liga_codigo": liga_sel,
-                        "pontos_ajuste": int(pontos_adj),
-                        "motivo": motivo_adj.strip() if motivo_adj else "Ajuste manual"
-                    }).execute()
-                    st.success(f"✅ {pontos_adj:+d} pontos aplicados para {usuario_sel} na liga {liga_sel}!")
-                    st.rerun()
-                else:
-                    st.warning("O valor de pontos não pode ser zero.")
-        else:
-            st.info("Nenhum membro nesta liga.")
+                    else:
+                        st.warning("O valor de pontos não pode ser zero.")
+            else:
+                st.info("Nenhum membro nesta liga.")
 
     st.write("📊 **Resultados dos Jogos:**")
     if not jogos.empty:
