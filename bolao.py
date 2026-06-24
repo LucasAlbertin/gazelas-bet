@@ -280,9 +280,8 @@ def calcular_ranking(codigo_liga):
     membros_da_liga = [str(m).strip() for m in membros_brutos]
 
     jogos_res = supabase.table("jogos").select("*").execute()
-    palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).execute()
-    ajustes_res = supabase.table("ajustes_pontos").select("usuario_nome, pontos_ajuste").eq("liga_codigo", cod).execute()
-
+    palpites_res = supabase.table("palpites").select("*").eq("liga_codigo", cod).limit(10000).execute()
+    palpites_res = supabase.table("palpites").select("jogo_id, usuario, palpite_a, palpite_b").eq("liga_codigo", cod).limit(10000).execute()
     pontos = {m: 0 for m in membros_da_liga}
     jogos_dict = {}
 
