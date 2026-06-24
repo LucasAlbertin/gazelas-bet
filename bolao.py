@@ -724,7 +724,7 @@ elif st.session_state.usuario_logado == "ADMIN":
                         st.caption("ℹ️ Nenhum participante ingressou nesta liga ainda.")
                 st.markdown("<hr style='margin:15px 0; border-color:rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
 
-  with st.expander("✏️ Ajuste Manual de Pontos"):
+    with st.expander("✏️ Ajuste Manual de Pontos"):
         st.caption("Use para corrigir pontos perdidos por bug, cache ou qualquer inconsistência.")
 
         df_ligas_adj = get_todas_ligas()
