@@ -145,7 +145,6 @@ def normalizar_usuario(nome_bruto, mapa_canonico):
 # FUNÇÕES DE BANCO DE DADOS
 # =========================================================
 
-@st.cache_data(ttl=300)
 def get_jogos():
     res = supabase.table("jogos").select("*").order("data_hora").execute()
     df = pd.DataFrame(res.data)
