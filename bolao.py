@@ -867,17 +867,36 @@ else:
                                 ra, rb = j_i['gols_a'], j_i['gols_b']
                                 ra_int, rb_int = to_int_seguro(ra), to_int_seguro(rb)
                                 st.info(f"Placar Real: {ra_int if ra_int is not None else '?'} x {rb_int if rb_int is not None else '?'}")
+
+                                texto_compartilhar = f"⚽ {j_i['time_a']} x {j_i['time_b']}\n"
+                                texto_compartilhar += f"📊 Placar Real: {ra_int if ra_int is not None else '?'} x {rb_int if rb_int is not None else '?'}\n\n"
+                                texto_compartilhar += "🎯 Palpites:\n"
+
                                 users_p = df_p['Participante'].tolist()
                                 for _, row in df_p.iterrows():
                                     pa, pb = to_int_seguro(row['Gols A']), to_int_seguro(row['Gols B'])
                                     txt = f"**{row['Participante']}**: {pa} x {pb}"
                                     if ra_int is not None and rb_int is not None and pa is not None and pb is not None:
-                                        if pa == ra_int and pb == rb_int: st.success(f"🎯 {txt}")
-                                        elif (pa > pb and ra_int > rb_int) or (pa < pb and ra_int < rb_int) or (pa == pb and ra_int == rb_int): st.info(f"👍 {txt}")
-                                        else: st.error(f"❌ {txt}")
-                                    else: st.write(f"⏳ {txt}")
+                                        if pa == ra_int and pb == rb_int:
+                                            st.success(f"🎯 {txt}")
+                                            texto_compartilhar += f"🎯 {row['Participante']}: {pa} x {pb}\n"
+                                        elif (pa > pb and ra_int > rb_int) or (pa < pb and ra_int < rb_int) or (pa == pb and ra_int == rb_int):
+                                            st.info(f"👍 {txt}")
+                                            texto_compartilhar += f"👍 {row['Participante']}: {pa} x {pb}\n"
+                                        else:
+                                            st.error(f"❌ {txt}")
+                                            texto_compartilhar += f"❌ {row['Participante']}: {pa} x {pb}\n"
+                                    else:
+                                        st.write(f"⏳ {txt}")
+                                        texto_compartilhar += f"⏳ {row['Participante']}: {pa} x {pb}\n"
+
                                 for usr in ranking['Participante'].tolist():
-                                    if usr not in users_p: st.write(f"⚪ **{usr}** não palpitou.")
+                                    if usr not in users_p:
+                                        st.write(f"⚪ **{usr}** não palpitou.")
+                                        texto_compartilhar += f"⚪ {usr}: não palpitou\n"
+
+                                texto_compartilhar += "\n🏆 Gazelas Bet 2026"
+                                st.code(texto_compartilhar, language="text")
                         else:
                             st.warning("🔒 Oculto até o início do jogo.")
                         st.markdown("---")
