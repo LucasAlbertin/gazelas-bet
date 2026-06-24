@@ -145,6 +145,7 @@ def normalizar_usuario(nome_bruto, mapa_canonico):
 # FUNÇÕES DE BANCO DE DADOS
 # =========================================================
 
+@st.cache_data(ttl=300)
 def get_jogos():
     res = supabase.table("jogos").select("*").order("data_hora").execute()
     df = pd.DataFrame(res.data)
@@ -211,6 +212,7 @@ def verificar_login(nome, senha):
         return res.data[0]['nome']
     return None
 
+@st.cache_data(ttl=15)
 def get_ligas_do_usuario(usuario):
     res = supabase.table("membros_liga").select("liga_codigo").eq("usuario_nome", usuario).execute()
     if not res.data: return []
@@ -288,7 +290,6 @@ def calcular_ranking(codigo_liga):
         jid = int(j['id'])
         jogos_dict[jid] = j
 
-    # Aplica ajustes manuais
     for a in ajustes_res.data:
         usr = str(a['usuario_nome']).strip()
         for m in membros_da_liga:
@@ -339,6 +340,57 @@ def calcular_ranking(codigo_liga):
 
     df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos'])
     df = df.sort_values(by='Pontos', ascending=False).reset_index(drop=True)
+    return df
+
+
+def calcular_ranking_direto_sql(codigo_liga):
+    cod = codigo_liga.strip().upper()
+
+    jogos_res = supabase.table("jogos").select("*").execute()
+    palpites_res = supabase.table("palpites").select("*").eq("liga_codigo", cod).execute()
+    membros_res = supabase.table("membros_liga").select("usuario_nome").eq("liga_codigo", cod).execute()
+    ajustes_res = supabase.table("ajustes_pontos").select("*").eq("liga_codigo", cod).execute()
+
+    membros = [str(m['usuario_nome']).strip() for m in membros_res.data]
+    pontos = {m: 0 for m in membros}
+
+    jogos_dict = {}
+    for j in jogos_res.data:
+        jogos_dict[int(j['id'])] = j
+
+    vistos = set()
+    for p in palpites_res.data:
+        usr = str(p['usuario']).strip()
+        jid = int(p['jogo_id'])
+        chave = (usr.upper(), jid)
+        if chave in vistos or jid not in jogos_dict:
+            continue
+        vistos.add(chave)
+
+        nome_oficial = next((m for m in membros if m.upper() == usr.upper()), None)
+        if not nome_oficial:
+            continue
+
+        j = jogos_dict[jid]
+        pa, pb = to_int_seguro(p['palpite_a']), to_int_seguro(p['palpite_b'])
+        ra, rb = to_int_seguro(j.get('gols_a')), to_int_seguro(j.get('gols_b'))
+
+        if None in (pa, pb, ra, rb):
+            continue
+
+        if pa == ra and pb == rb:
+            pontos[nome_oficial] += 3
+        elif (pa > pb and ra > rb) or (pa < pb and ra < rb) or (pa == pb and ra == rb):
+            pontos[nome_oficial] += 1
+
+    for a in ajustes_res.data:
+        usr = str(a['usuario_nome']).strip()
+        nome_oficial = next((m for m in membros if m.upper() == usr.upper()), None)
+        if nome_oficial:
+            pontos[nome_oficial] += int(a['pontos_ajuste'])
+
+    df = pd.DataFrame(list(pontos.items()), columns=['Participante', 'Pontos'])
+    df = df.sort_values('Pontos', ascending=False).reset_index(drop=True)
     return df
 
 
@@ -633,6 +685,24 @@ elif st.session_state.usuario_logado == "ADMIN":
         st.rerun()
 
     jogos = get_jogos()
+
+    with st.expander("📊 Ranking Direto do Banco (sem cache)", expanded=False):
+        st.caption("Mostra o ranking calculado na hora, ignorando qualquer cache.")
+        df_ligas_rank = get_todas_ligas()
+        if not df_ligas_rank.empty:
+            liga_rank = st.selectbox("Escolha a liga:", df_ligas_rank['codigo'].tolist(), key="rank_direto_liga")
+            if st.button("Calcular Agora", key="btn_rank_direto"):
+                df_direto = calcular_ranking_direto_sql(liga_rank)
+                if not df_direto.empty:
+                    df_direto.insert(0, 'Pos', range(1, len(df_direto) + 1))
+                    st.dataframe(df_direto, use_container_width=True, hide_index=True)
+                    texto = f"🏆 GAZELAS BET - LIGA {liga_rank} 🏆\n\n"
+                    for _, r in df_direto.iterrows():
+                        texto += f"{int(r['Pos'])}º {r['Participante']} — {r['Pontos']} pts\n"
+                    st.code(texto, language="text")
+                else:
+                    st.info("Nenhum dado encontrado.")
+
     with st.expander("🔁 RECALCULAR PONTOS — Todas as Ligas", expanded=False):
         if st.button("🔁 Recalcular Agora", type="primary", key="btn_recalculo_geral"):
             st.cache_data.clear()
@@ -668,61 +738,6 @@ elif st.session_state.usuario_logado == "ADMIN":
                     st.success("✅ Recálculo concluído. Nenhuma inconsistência encontrada.")
                 else:
                     st.warning(f"Recálculo concluído. {total_inconsistencias} inconsistência(s) encontrada(s).")
-
-    with st.expander("👥 Gerenciar Contas de Jogadores"):
-        df_usuarios = get_todos_usuarios_global()
-        if not df_usuarios.empty:
-            for _, row_u in df_usuarios.iterrows():
-                c_u1, c_u2, c_u3, c_u4 = st.columns([3, 2, 2, 1])
-                c_u1.write(f"👤 {row_u['nome']}")
-                c_u2.write("🔑 ••••••••")
-
-                with c_u3.popover("Redefinir senha"):
-                    nova_s = st.text_input("Nova senha:", type="password", key=f"reset_pass_{row_u['nome']}")
-                    if st.button("Confirmar", key=f"confirma_reset_{row_u['nome']}"):
-                        if nova_s:
-                            redefinir_senha_usuario(row_u['nome'], nova_s)
-                            st.success("Senha atualizada!")
-                            st.rerun()
-                        else:
-                            st.warning("Digite uma senha.")
-
-                if c_u4.button("Excluir", key=f"del_user_{row_u['nome']}"):
-                    deletar_usuario(row_u['nome'])
-                    st.rerun()
-        else:
-            st.info("Nenhum usuário cadastrado ainda.")
-
-    with st.expander("🏆 Gerenciar Ligas Ativas & Membros"):
-        df_ligas = get_todas_ligas()
-        df_membros_todos = get_todos_membros_liga_global()
-
-        if not df_ligas.empty:
-            for _, row_l in df_ligas.iterrows():
-                cod_l = row_l['codigo']
-
-                c_l1, c_l2, c_l3 = st.columns([3, 3, 1])
-                c_l1.markdown(f"### 🔹 {row_l['nome']}")
-                c_l2.markdown(f"Código: `{cod_l}`")
-                if c_l3.button("Apagar Liga", key=f"del_liga_{cod_l}"):
-                    deletar_liga(cod_l)
-                    st.rerun()
-
-                if not df_membros_todos.empty:
-                    membros_da_liga = df_membros_todos[df_membros_todos['liga_codigo'] == cod_l]['usuario_nome'].tolist()
-
-                    if membros_da_liga:
-                        st.write(f"👥 **Membros ativos ({len(membros_da_liga)}):**")
-                        for membro in membros_da_liga:
-                            col_m1, col_m2 = st.columns([5, 2])
-                            col_m1.write(f"👉 {membro}")
-                            if col_m2.button("Remover da Liga", key=f"kick_{membro}_{cod_l}"):
-                                remover_membro_da_liga(membro, cod_l)
-                                st.success(f"👤 {membro} foi removido da liga!")
-                                st.rerun()
-                    else:
-                        st.caption("ℹ️ Nenhum participante ingressou nesta liga ainda.")
-                st.markdown("<hr style='margin:15px 0; border-color:rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
 
     with st.expander("✏️ Ajuste Manual de Pontos"):
         st.caption("Use para corrigir pontos perdidos por bug, cache ou qualquer inconsistência.")
@@ -771,6 +786,59 @@ elif st.session_state.usuario_logado == "ADMIN":
                         st.warning("O valor de pontos não pode ser zero.")
             else:
                 st.info("Nenhum membro nesta liga.")
+
+    with st.expander("👥 Gerenciar Contas de Jogadores"):
+        df_usuarios = get_todos_usuarios_global()
+        if not df_usuarios.empty:
+            for _, row_u in df_usuarios.iterrows():
+                c_u1, c_u2, c_u3, c_u4 = st.columns([3, 2, 2, 1])
+                c_u1.write(f"👤 {row_u['nome']}")
+                c_u2.write("🔑 ••••••••")
+
+                with c_u3.popover("Redefinir senha"):
+                    nova_s = st.text_input("Nova senha:", type="password", key=f"reset_pass_{row_u['nome']}")
+                    if st.button("Confirmar", key=f"confirma_reset_{row_u['nome']}"):
+                        if nova_s:
+                            redefinir_senha_usuario(row_u['nome'], nova_s)
+                            st.success("Senha atualizada!")
+                            st.rerun()
+                        else:
+                            st.warning("Digite uma senha.")
+
+                if c_u4.button("Excluir", key=f"del_user_{row_u['nome']}"):
+                    deletar_usuario(row_u['nome'])
+                    st.rerun()
+        else:
+            st.info("Nenhum usuário cadastrado ainda.")
+
+    with st.expander("🏆 Gerenciar Ligas Ativas & Membros"):
+        df_ligas = get_todas_ligas()
+        df_membros_todos = get_todos_membros_liga_global()
+
+        if not df_ligas.empty:
+            for _, row_l in df_ligas.iterrows():
+                cod_l = row_l['codigo']
+                c_l1, c_l2, c_l3 = st.columns([3, 3, 1])
+                c_l1.markdown(f"### 🔹 {row_l['nome']}")
+                c_l2.markdown(f"Código: `{cod_l}`")
+                if c_l3.button("Apagar Liga", key=f"del_liga_{cod_l}"):
+                    deletar_liga(cod_l)
+                    st.rerun()
+
+                if not df_membros_todos.empty:
+                    membros_da_liga = df_membros_todos[df_membros_todos['liga_codigo'] == cod_l]['usuario_nome'].tolist()
+                    if membros_da_liga:
+                        st.write(f"👥 **Membros ativos ({len(membros_da_liga)}):**")
+                        for membro in membros_da_liga:
+                            col_m1, col_m2 = st.columns([5, 2])
+                            col_m1.write(f"👉 {membro}")
+                            if col_m2.button("Remover da Liga", key=f"kick_{membro}_{cod_l}"):
+                                remover_membro_da_liga(membro, cod_l)
+                                st.success(f"👤 {membro} foi removido da liga!")
+                                st.rerun()
+                    else:
+                        st.caption("ℹ️ Nenhum participante ingressou nesta liga ainda.")
+                st.markdown("<hr style='margin:15px 0; border-color:rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
 
     st.write("📊 **Resultados dos Jogos:**")
     if not jogos.empty:
@@ -822,7 +890,6 @@ elif st.session_state.liga_ativa is None:
         st.rerun()
 
     st.subheader("🏆 Minhas Ligas & Grupos")
-
     df_membros_cached = get_todos_membros_liga_global()
 
     with st.expander("📁 Minhas Ligas (Onde estou participando)", expanded=True):
@@ -881,7 +948,6 @@ elif st.session_state.liga_ativa is None:
 
     with st.expander("⚙️ Configurações da Conta"):
         st.markdown("<p style='font-size:13px; color:#A0AEC0;'>Deseja alterar seus dados de acesso?</p>", unsafe_allow_html=True)
-
         novo_nome_input = st.text_input("Seu Nome de Usuário:", value=user, key="edit_profile_name")
         nova_senha_input = st.text_input("Nova Senha (deixe em branco para manter):", value="", type="password", key="edit_profile_pass")
 
@@ -927,16 +993,12 @@ else:
 
     tab1, tab2, tab_var, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "🔍 VAR", "👀 Espiar", "🌍 Copa", "📜 Regras"])
 
-    # 1. PALPITES
     with tab1:
         if not jogos.empty:
             p_u = get_palpites_usuario(user, liga)
-
             fuso_br = pytz.timezone('America/Sao_Paulo')
             agora_br = datetime.now(fuso_br).replace(tzinfo=None)
-
             jogos['ja_comecou'] = agora_br >= jogos['datetime_convertido']
-
             dias_futuros = jogos[jogos['ja_comecou'] == False]['data_apenas'].unique()
             dias_passados = jogos[jogos['ja_comecou'] == True]['data_apenas'].unique()
 
@@ -1016,10 +1078,8 @@ else:
                                     st.markdown("<div style='text-align:center; font-size:12px; color:#EF4444;'>❌ Você perdeu o prazo deste jogo.</div>", unsafe_allow_html=True)
                                 st.markdown("</div>", unsafe_allow_html=True)
 
-    # 2. RANKING
     with tab2:
         st.subheader("🏆 Classificação da Liga")
-
         if not ranking.empty:
             df_visual = ranking.copy()
             df_visual.insert(0, 'Posição', range(1, len(df_visual) + 1))
@@ -1029,7 +1089,6 @@ else:
                 elif pos == 3: return "🥉 3º"
                 return f"▪️ {pos}º"
             df_visual['Posição'] = df_visual['Posição'].apply(emojificar_posicao)
-
             st.dataframe(
                 df_visual,
                 use_container_width=True,
@@ -1048,7 +1107,6 @@ else:
         else:
             st.info("Ainda não há pontos a exibir nesta liga.")
 
-    # 3. VAR
     with tab_var:
         st.subheader("🔍 VAR — Conferência de Pontos")
         st.caption("Veja exatamente como cada ponto seu foi contado.")
@@ -1069,7 +1127,6 @@ else:
         if user == "ADMIN" or user == "Admin":
             st.markdown("---")
             st.markdown("### 🛡️ Recontagem Geral (Admin)")
-
             diag_geral = obter_diagnostico_pontos(liga)
 
             if diag_geral["usuarios_sem_vinculo"]:
@@ -1081,8 +1138,6 @@ else:
                         if corrigir_vinculo_membro(usr_orfao, liga):
                             st.success(f"✅ Vínculo de {usr_orfao} corrigido!")
                             st.rerun()
-                        else:
-                            st.error("Não foi possível corrigir.")
 
             if diag_geral["duplicatas"]:
                 st.warning("⚠️ Palpites duplicados encontrados.")
@@ -1106,7 +1161,6 @@ else:
             else:
                 st.info("Nenhum palpite computável encontrado.")
 
-    # 4. ESPIAR
     with tab3:
         st.subheader("👀 Espiar Adversários")
         if not jogos.empty:
@@ -1138,7 +1192,6 @@ else:
                             st.warning("🔒 Oculto até o início do jogo.")
                         st.markdown("---")
 
-    # 5. COPA
     with tab_copa:
         df_copa = calcular_tabela_copa()
         if not df_copa.empty:
@@ -1146,7 +1199,6 @@ else:
                 st.markdown(f"### {grupo}")
                 st.dataframe(df_copa[df_copa['Grupo']==grupo].sort_values(by=['Pts','SG','GP'], ascending=False).drop(columns=['Grupo']), use_container_width=True, hide_index=True)
 
-    # 6. REGRAS
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
         st.markdown("""
@@ -1164,5 +1216,5 @@ else:
         """, unsafe_allow_html=True)
 
 # RODAPÉ
-APP_VERSION = "v1.4 — correção de tipo bigint/integer no join de pontuação (2026-06-23)"
+APP_VERSION = "v1.5 — ranking direto do banco + ajuste manual de pontos (2026-06-23)"
 st.markdown(f"<div class='footer'>CRIADO POR LUCAS ALBERTIN • GAZELAS BET 2026<br><span style='opacity:0.5;'>{APP_VERSION}</span></div>", unsafe_allow_html=True)
