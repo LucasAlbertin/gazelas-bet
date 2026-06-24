@@ -358,8 +358,6 @@ def calcular_ranking(codigo_liga):
         jogos_dict[int(j['id'])] = j
 
     vistos = set()
-    ignorados_sem_membro = []
-    ignorados_sem_resultado = []
 
     for p in palpites_res.data:
         usr = str(p['usuario']).strip()
@@ -372,7 +370,6 @@ def calcular_ranking(codigo_liga):
 
         nome_oficial = next((m for m in membros if m.upper() == usr.upper()), None)
         if not nome_oficial:
-            ignorados_sem_membro.append(usr)
             continue
 
         j = jogos_dict[jid]
@@ -380,7 +377,6 @@ def calcular_ranking(codigo_liga):
         ra, rb = to_int_seguro(j.get('gols_a')), to_int_seguro(j.get('gols_b'))
 
         if None in (pa, pb, ra, rb):
-            ignorados_sem_resultado.append((usr, jid))
             continue
 
         if pa == ra and pb == rb:
@@ -405,14 +401,6 @@ def calcular_ranking(codigo_liga):
     print(f"Ignorados sem membro: {set(ignorados_sem_membro)}")
     print(f"Ignorados sem resultado: {len(ignorados_sem_resultado)}")
     print(df.to_string())
-
-    # DEBUG TEMPORÁRIO — remover depois
-    st.write(f"**DEBUG GAZELAS:**")
-    st.write(f"Membros encontrados: {membros}")
-    st.write(f"Total palpites recebidos: {len(palpites_res.data)}")
-    st.write(f"Jogos no dict: {len(jogos_dict)}")
-    st.write(f"Ignorados sem membro: {set(ignorados_sem_membro)}")
-    st.write(f"Pontos calculados: {pontos}")
 
     return df
 
