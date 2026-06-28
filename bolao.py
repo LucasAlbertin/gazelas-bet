@@ -825,14 +825,20 @@ else:
     with tab2:
         st.subheader("🏆 Classificação da Liga")
         if not ranking.empty:
-            df_visual = ranking.copy()
-            df_visual.insert(0, 'Posição', range(1, len(df_visual) + 1))
+            total = len(ranking)
+
             def emojificar_posicao(pos):
-                if pos == 1: return "🥇 1º"
-                elif pos == 2: return "🥈 2º"
-                elif pos == 3: return "🥉 3º"
-                return f"▪️ {pos}º"
-            df_visual['Posição'] = df_visual['Posição'].apply(emojificar_posicao)
+                if pos == 1: return "🥇"
+                elif pos == 2: return "🥈"
+                elif pos == 3: return "🥉"
+                elif pos == 4: return "🟢"
+                elif pos >= total - 3: return "🔴"
+                else: return "🔵"
+
+            df_visual = ranking.copy()
+            df_visual.insert(0, 'Posição', range(1, total + 1))
+            df_visual['Posição'] = df_visual['Posição'].apply(lambda p: f"{emojificar_posicao(p)} {p}º")
+
             st.dataframe(
                 df_visual,
                 use_container_width=True,
@@ -844,9 +850,12 @@ else:
                 }
             )
             st.markdown("---")
+
             texto_copia = f"🏆 GAZELAS BET - LIGA {liga} 🏆\n\n"
             for i, r in ranking.iterrows():
-                texto_copia += f"{i+1}º {r['Participante']} — {r['Pontos']} pts\n"
+                pos = i + 1
+                emoji = emojificar_posicao(pos)
+                texto_copia += f"{emoji} {pos}º {r['Participante']} — {r['Pontos']} pts\n"
             st.code(texto_copia, language="text")
         else:
             st.info("Ainda não há pontos a exibir nesta liga.")
@@ -856,9 +865,18 @@ else:
         if not jogos.empty:
             fuso_br = pytz.timezone('America/Sao_Paulo')
             agora_br = datetime.now(fuso_br).replace(tzinfo=None)
-            for dia in jogos['data_apenas'].unique():
-                with st.expander(f"📅 Jogos do dia {dia}"):
-                    for _, j_i in jogos[jogos['data_apenas'] == dia].iterrows():
+
+            dias_ordenados = sorted(
+                jogos['data_apenas'].unique(),
+                key=lambda d: datetime.strptime(d, '%d/%m/%Y'),
+                reverse=True
+            )
+
+            for dia in dias_ordenados:
+                jogos_do_dia = jogos[jogos['data_apenas'] == dia]
+                eh_hoje = dia == agora_br.strftime('%d/%m/%Y')
+                with st.expander(f"📅 Jogos do dia {dia}", expanded=eh_hoje):
+                    for _, j_i in jogos_do_dia.iterrows():
                         st.markdown(f"**{j_i['time_a']} x {j_i['time_b']}**")
                         h_j = j_i['datetime_convertido']
                         if agora_br >= h_j:
@@ -901,12 +919,43 @@ else:
                             st.warning("🔒 Oculto até o início do jogo.")
                         st.markdown("---")
 
-    with tab_copa:
+   with tab_copa:
         df_copa = calcular_tabela_copa()
-        if not df_copa.empty:
-            for grupo in sorted(df_copa['Grupo'].unique()):
-                st.markdown(f"### {grupo}")
-                st.dataframe(df_copa[df_copa['Grupo']==grupo].sort_values(by=['Pts','SG','GP'], ascending=False).drop(columns=['Grupo']), use_container_width=True, hide_index=True)
+
+        with st.expander("🌍 Fase de Grupos — Classificação", expanded=False):
+            if not df_copa.empty:
+                for grupo in sorted(df_copa['Grupo'].unique()):
+                    st.markdown(f"### {grupo}")
+                    st.dataframe(
+                        df_copa[df_copa['Grupo'] == grupo]
+                        .sort_values(by=['Pts', 'SG', 'GP'], ascending=False)
+                        .drop(columns=['Grupo']),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+        with st.expander("⚔️ 16 Avos de Final", expanded=True):
+            jogos_16avos = jogos[jogos['fase'] == '16 avos'] if 'fase' in jogos.columns else pd.DataFrame()
+            if not jogos_16avos.empty:
+                for _, j in jogos_16avos.iterrows():
+                    ga = to_int_seguro(j['gols_a'])
+                    gb = to_int_seguro(j['gols_b'])
+                    data_fmt = j['data_apenas'] if 'data_apenas' in j else ''
+                    hora_fmt = j['hora_apenas'] if 'hora_apenas' in j else ''
+
+                    if ga is not None and gb is not None:
+                        resultado = f"**{ga} x {gb}**"
+                        if ga > gb:
+                            linha = f"✅ {j['time_a']} {resultado} {j['time_b']} — {data_fmt} {hora_fmt}"
+                        elif gb > ga:
+                            linha = f"✅ {j['time_a']} {resultado} {j['time_b']} — {data_fmt} {hora_fmt}"
+                        else:
+                            linha = f"✅ {j['time_a']} {resultado} {j['time_b']} — {data_fmt} {hora_fmt}"
+                        st.success(linha)
+                    else:
+                        st.info(f"⏳ {j['time_a']} x {j['time_b']} — {data_fmt} às {hora_fmt}")
+            else:
+                st.caption("Nenhum jogo de 16 avos cadastrado ainda. Adicione pelo painel Admin.")
 
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
