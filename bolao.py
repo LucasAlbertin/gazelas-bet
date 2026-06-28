@@ -94,6 +94,7 @@ ADMIN_PASS = get_secret("ADMIN_PASS", "gazelas123")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+FASES_MATA_MATA = ['16 avos', 'Oitavas', 'Quartas', 'Semifinal', 'Final']
 
 # =========================================================
 # HELPERS
@@ -225,7 +226,6 @@ def get_todos_palpites_do_jogo(jogo_id, codigo_liga):
 
 def calcular_ranking(codigo_liga):
     cod = codigo_liga.strip().upper()
-
     membros_res = supabase.table("membros_liga").select("usuario_nome").eq("liga_codigo", cod).execute()
     ranking_res = supabase.table("ranking_por_liga").select("usuario, pontos_automaticos").eq("liga_codigo", cod).execute()
     ajustes_res = supabase.table("ajustes_pontos").select("usuario_nome, pontos_ajuste").eq("liga_codigo", cod).execute()
@@ -285,8 +285,11 @@ def deletar_jogo(jogo_id):
     supabase.table("jogos").delete().eq("id", jogo_id).execute()
     st.cache_data.clear()
 
-def atualizar_resultado_real(jogo_id, gols_a, gols_b):
-    supabase.table("jogos").update({"gols_a": gols_a, "gols_b": gols_b}).eq("id", jogo_id).execute()
+def atualizar_resultado_real(jogo_id, gols_a, gols_b, vencedor=None):
+    data = {"gols_a": gols_a, "gols_b": gols_b}
+    if vencedor:
+        data["vencedor"] = vencedor
+    supabase.table("jogos").update(data).eq("id", jogo_id).execute()
     st.cache_data.clear()
 
 def redefinir_senha_usuario(nome_usuario, nova_senha):
@@ -303,7 +306,7 @@ def reset_banco_dados():
         supabase.table("membros_liga").delete().neq("liga_codigo", "").execute()
         supabase.table("usuarios").delete().neq("nome", "").execute()
         supabase.table("ligas").delete().neq("nome", "").execute()
-        supabase.table("jogos").update({"gols_a": None, "gols_b": None}).neq("time_a", "").execute()
+        supabase.table("jogos").update({"gols_a": None, "gols_b": None, "vencedor": None}).neq("time_a", "").execute()
         st.cache_data.clear()
     except Exception as e:
         st.error(f"Erro ao resetar banco: {e}")
@@ -332,7 +335,8 @@ def calcular_tabela_copa():
         for time in times:
             tabela[time] = {'Grupo': grupo, 'Time': time, 'Pts': 0, 'J': 0, 'V': 0, 'E': 0, 'D': 0, 'GP': 0, 'GC': 0, 'SG': 0}
     if not jogos_realizados.empty:
-        for _, j in jogos_realizados.iterrows():
+        jogos_grupos = jogos_realizados[jogos_realizados['fase'] == 'Fase de Grupos'] if 'fase' in jogos_realizados.columns else jogos_realizados
+        for _, j in jogos_grupos.iterrows():
             ta, tb = j['time_a'], j['time_b']
             ga = to_int_seguro(j['gols_a'], 0)
             gb = to_int_seguro(j['gols_b'], 0)
@@ -347,6 +351,72 @@ def calcular_tabela_copa():
                 elif gb == ga: tabela[tb]['Pts'] += 1; tabela[tb]['E'] += 1
                 else: tabela[tb]['D'] += 1
     return pd.DataFrame(list(tabela.values()))
+
+def get_vencedor_jogo(time_a, time_b, jogos_df):
+    """Retorna o vencedor de um jogo pelo campo vencedor ou pelo placar."""
+    if jogos_df.empty:
+        return None
+    j = jogos_df[(jogos_df['time_a'] == time_a) & (jogos_df['time_b'] == time_b)]
+    if j.empty:
+        return None
+    j = j.iloc[0]
+    if j.get('vencedor') and str(j['vencedor']).strip():
+        return str(j['vencedor']).strip()
+    ga = to_int_seguro(j.get('gols_a'))
+    gb = to_int_seguro(j.get('gols_b'))
+    if ga is not None and gb is not None:
+        if ga > gb: return time_a
+        if gb > ga: return time_b
+    return None
+
+def montar_chaveamento(jogos_df):
+    """Monta o dicionário de vencedores para o chaveamento."""
+    def v(ta, tb): return get_vencedor_jogo(ta, tb, jogos_df) or "?"
+
+    # 16 avos
+    w = {
+        'L1': v('🇩🇪 Alemanha', '🇵🇾 Paraguai'),
+        'L2': v('🇫🇷 França', '🇸🇪 Suécia'),
+        'L3': v('🇿🇦 África do Sul', '🇨🇦 Canadá'),
+        'L4': v('🇳🇱 Holanda', '🇲🇦 Marrocos'),
+        'L5': v('🇵🇹 Portugal', '🇭🇷 Croácia'),
+        'L6': v('🇪🇸 Espanha', '🇦🇹 Áustria'),
+        'L7': v('🇺🇸 Estados Unidos', '🇧🇦 Bósnia'),
+        'L8': v('🇧🇪 Bélgica', '🇸🇳 Senegal'),
+        'R1': v('🇧🇷 Brasil', '🇯🇵 Japão'),
+        'R2': v('🇨🇮 Costa do Marfim', '🇳🇴 Noruega'),
+        'R3': v('🇲🇽 México', '🇪🇨 Equador'),
+        'R4': v('🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra', '🇨🇩 Congo'),
+        'R5': v('🇦🇷 Argentina', '🇨🇻 Cabo Verde'),
+        'R6': v('🇦🇺 Austrália', '🇪🇬 Egito'),
+        'R7': v('🇨🇭 Suíça', '🇩🇿 Argélia'),
+        'R8': v('🇨🇴 Colômbia', '🇬🇭 Gana'),
+    }
+
+    # Oitavas
+    w['OL1'] = v(w['L1'], w['L2']) if '?' not in [w['L1'], w['L2']] else '?'
+    w['OL2'] = v(w['L3'], w['L4']) if '?' not in [w['L3'], w['L4']] else '?'
+    w['OL3'] = v(w['L5'], w['L6']) if '?' not in [w['L5'], w['L6']] else '?'
+    w['OL4'] = v(w['L7'], w['L8']) if '?' not in [w['L7'], w['L8']] else '?'
+    w['OR1'] = v(w['R1'], w['R2']) if '?' not in [w['R1'], w['R2']] else '?'
+    w['OR2'] = v(w['R3'], w['R4']) if '?' not in [w['R3'], w['R4']] else '?'
+    w['OR3'] = v(w['R5'], w['R6']) if '?' not in [w['R5'], w['R6']] else '?'
+    w['OR4'] = v(w['R7'], w['R8']) if '?' not in [w['R7'], w['R8']] else '?'
+
+    # Quartas
+    w['QL1'] = v(w['OL1'], w['OL2']) if '?' not in [w['OL1'], w['OL2']] else '?'
+    w['QL2'] = v(w['OL3'], w['OL4']) if '?' not in [w['OL3'], w['OL4']] else '?'
+    w['QR1'] = v(w['OR1'], w['OR2']) if '?' not in [w['OR1'], w['OR2']] else '?'
+    w['QR2'] = v(w['OR3'], w['OR4']) if '?' not in [w['OR3'], w['OR4']] else '?'
+
+    # Semifinal
+    w['SL'] = v(w['QL1'], w['QL2']) if '?' not in [w['QL1'], w['QL2']] else '?'
+    w['SR'] = v(w['QR1'], w['QR2']) if '?' not in [w['QR1'], w['QR2']] else '?'
+
+    # Final
+    w['CAMP'] = v(w['SL'], w['SR']) if '?' not in [w['SL'], w['SR']] else '?'
+
+    return w
 
 
 # =========================================================
@@ -393,16 +463,15 @@ if st.session_state.usuario_logado is None:
     with col_texto:
         st.markdown("### 📌 Guia de Uso")
         with st.expander("⚽ ABA PALPITES"):
-            st.write("Os jogos estão separados por dia pra ninguém perder a chance de pontuar. É só entrar e deixar seus placares.")
+            st.write("Os jogos estão separados por dia pra ninguém perder a chance de pontuar.")
         with st.expander("🏆 ABA RANKING"):
-            st.write("Aqui fica a tabela de pontos corridos do bolão. Após o fim das partidas, a classificação atualizada também será enviada no grupo.")
+            st.write("Aqui fica a tabela de pontos corridos do bolão.")
         with st.expander("👀 ESPIAR"):
-            st.write("Depois que o prazo do jogo fechar, você poderá ver os palpites da galera e descobrir quem copiou seu placar.")
+            st.write("Depois que o prazo do jogo fechar, você poderá ver os palpites da galera.")
         with st.expander("🌍 COPA"):
             st.write("Informações gerais sobre seleções, grupos e andamento do torneio.")
         with st.expander("📖 REGRAS"):
             st.write("Autoexplicativo, né? Dá uma lida para não reclamar de pontuação depois!")
-
         st.markdown("<p style='font-size:15px; font-weight:bold; color:#FFB300;'>Que vença o melhor e VAMOS RUMO AO HEXA!!! 🇧🇷🏆</p>", unsafe_allow_html=True)
 
     with col_login:
@@ -414,19 +483,16 @@ if st.session_state.usuario_logado is None:
             nl = st.text_input("Usuário:", key="login_user")
             sl = st.text_input("Senha:", type="password", key="login_pass")
             manter_logado = st.checkbox("Manter logado neste dispositivo", value=True)
-
             if st.button("Entrar no Sistema", type="primary"):
                 if nl == ADMIN_USER and sl == ADMIN_PASS:
                     st.session_state.usuario_logado = "ADMIN"
-                    if manter_logado:
-                        st.query_params["cookie_user"] = "ADMIN"
+                    if manter_logado: st.query_params["cookie_user"] = "ADMIN"
                     st.rerun()
                 else:
                     nome_oficial_banco = verificar_login(nl, sl)
                     if nome_oficial_banco:
                         st.session_state.usuario_logado = nome_oficial_banco
-                        if manter_logado:
-                            st.query_params["cookie_user"] = nome_oficial_banco
+                        if manter_logado: st.query_params["cookie_user"] = nome_oficial_banco
                         st.rerun()
                     else:
                         st.error("❌ Usuário ou senha incorretos!")
@@ -452,8 +518,7 @@ elif st.session_state.usuario_logado == "ADMIN":
     st.error("🤖 MESTRE GLOBAL — PAINEL DE CONTROLE SUPREMO")
     if st.button("Sair do Modo Admin"):
         st.session_state.usuario_logado = None
-        if "cookie_user" in st.query_params:
-            del st.query_params["cookie_user"]
+        if "cookie_user" in st.query_params: del st.query_params["cookie_user"]
         st.rerun()
 
     jogos = get_jogos()
@@ -482,7 +547,6 @@ elif st.session_state.usuario_logado == "ADMIN":
             if df_ligas_recalculo.empty:
                 st.info("Nenhuma liga cadastrada ainda.")
             else:
-                total_inconsistencias = 0
                 for _, liga_row in df_ligas_recalculo.iterrows():
                     cod_liga_rc = liga_row['codigo']
                     nome_liga_rc = liga_row['nome']
@@ -499,18 +563,15 @@ elif st.session_state.usuario_logado == "ADMIN":
         st.caption("Use para corrigir pontos perdidos por bug, cache ou qualquer inconsistência.")
         df_ligas_adj = get_todas_ligas()
         df_membros_adj = get_todos_membros_liga_global()
-
         if not df_ligas_adj.empty:
             liga_sel = st.selectbox("Liga:", df_ligas_adj['codigo'].tolist(), key="adj_liga")
             membros_sel = []
             if not df_membros_adj.empty:
                 membros_sel = df_membros_adj[df_membros_adj['liga_codigo'] == liga_sel]['usuario_nome'].tolist()
-
             if membros_sel:
                 usuario_sel = st.selectbox("Jogador:", sorted(membros_sel), key="adj_usuario")
                 pontos_adj = st.number_input("Pontos a adicionar (use negativo para remover):", value=0, step=1, key="adj_pontos")
                 motivo_adj = st.text_input("Motivo:", key="adj_motivo")
-
                 ajustes_atuais = supabase.table("ajustes_pontos").select("*").eq("liga_codigo", liga_sel).execute()
                 if ajustes_atuais.data:
                     st.markdown("**Ajustes já aplicados nesta liga:**")
@@ -523,7 +584,6 @@ elif st.session_state.usuario_logado == "ADMIN":
                             supabase.table("ajustes_pontos").delete().eq("id", int(adj_del)).execute()
                             st.success("Ajuste removido!")
                             st.rerun()
-
                 if st.button("Aplicar Ajuste", type="primary", key="btn_aplicar_adj"):
                     if pontos_adj != 0:
                         supabase.table("ajustes_pontos").insert({
@@ -591,18 +651,35 @@ elif st.session_state.usuario_logado == "ADMIN":
     st.write("📊 **Resultados dos Jogos:**")
     if not jogos.empty:
         for _, jo in jogos.iterrows():
-            c1, c2, c3, c4, c5 = st.columns([2,1,1,2,1])
-            c1.write(f"{jo['time_a']} x {jo['time_b']}")
+            fase_jo = jo.get('fase', 'Fase de Grupos')
+            eh_mata_mata = fase_jo in FASES_MATA_MATA
+            if eh_mata_mata:
+                c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 2, 2, 1])
+            else:
+                c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 2, 1])
+
+            c1.write(f"{jo['time_a']} x {jo['time_b']} {'⚔️' if eh_mata_mata else ''}")
             ga = to_int_seguro(jo['gols_a'], 0)
             gb = to_int_seguro(jo['gols_b'], 0)
             na = c2.number_input("A", value=ga, key=f"ad_a_{jo['id']}", label_visibility="collapsed")
             nb = c3.number_input("B", value=gb, key=f"ad_b_{jo['id']}", label_visibility="collapsed")
-            if c4.button("Salvar Placar", key=f"ad_btn_{jo['id']}"):
-                atualizar_resultado_real(int(jo['id']), na, nb)
-                st.rerun()
-            if c5.button("❌", key=f"del_jogo_{jo['id']}"):
-                deletar_jogo(jo['id'])
-                st.rerun()
+
+            vencedor_atual = jo.get('vencedor', '') or ''
+            if eh_mata_mata:
+                venc_input = c4.text_input("Vencedor (pên.):", value=vencedor_atual, key=f"venc_{jo['id']}", placeholder="Time vencedor...")
+                if c5.button("Salvar Placar", key=f"ad_btn_{jo['id']}"):
+                    atualizar_resultado_real(int(jo['id']), na, nb, venc_input.strip() if venc_input.strip() else None)
+                    st.rerun()
+                if c6.button("❌", key=f"del_jogo_{jo['id']}"):
+                    deletar_jogo(jo['id'])
+                    st.rerun()
+            else:
+                if c4.button("Salvar Placar", key=f"ad_btn_{jo['id']}"):
+                    atualizar_resultado_real(int(jo['id']), na, nb)
+                    st.rerun()
+                if c5.button("❌", key=f"del_jogo_{jo['id']}"):
+                    deletar_jogo(jo['id'])
+                    st.rerun()
 
     st.markdown("---")
     st.subheader("➕ Novo Jogo")
@@ -629,12 +706,11 @@ elif st.session_state.usuario_logado == "ADMIN":
 # =========================================================
 elif st.session_state.liga_ativa is None:
     user = st.session_state.usuario_logado
-    col_u, col_s = st.columns([5,1])
+    col_u, col_s = st.columns([5, 1])
     col_u.write(f"👋 Olá, **{user}**!")
     if col_s.button("Sair"):
         st.session_state.usuario_logado = None
-        if "cookie_user" in st.query_params:
-            del st.query_params["cookie_user"]
+        if "cookie_user" in st.query_params: del st.query_params["cookie_user"]
         st.rerun()
 
     st.subheader("🏆 Minhas Ligas & Grupos")
@@ -707,8 +783,7 @@ elif st.session_state.liga_ativa is None:
                 if sucesso:
                     st.success(mensagem)
                     st.session_state.usuario_logado = None
-                    if "cookie_user" in st.query_params:
-                        del st.query_params["cookie_user"]
+                    if "cookie_user" in st.query_params: del st.query_params["cookie_user"]
                     st.rerun()
                 else:
                     st.error(mensagem)
@@ -756,13 +831,17 @@ else:
                     with st.expander(f"📅 Jogos de {dia} — Abertos", expanded=True):
                         for _, j in jogos_do_dia.iterrows():
                             st.markdown("<div class='card'>", unsafe_allow_html=True)
+                            fase_j = j.get('fase', 'Fase de Grupos')
+                            eh_mata_mata = fase_j in FASES_MATA_MATA
                             st.markdown(f"""
                             <div style='display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px;'>
-                                <span style='color: #00E676;'>🏆 {j.get('fase', 'Fase de Grupos')}</span>
+                                <span style='color: #00E676;'>🏆 {fase_j}</span>
                                 <span style='color: #A0AEC0;'>🕒 Início: <b>{j['hora_apenas']}</b> (Horário de Brasília)</span>
                                 <span style='color: #FFB300;'>🔒 Fecha às: <b>{j['hora_apenas']}</b></span>
                             </div>
                             """, unsafe_allow_html=True)
+                            if eh_mata_mata:
+                                st.caption("⚔️ Mata-mata — palpite no placar dos 120 minutos (não conta pênaltis)")
 
                             p_at = p_u[p_u['jogo_id'] == j['id']]
                             ja_palpitou = not p_at.empty
@@ -817,7 +896,10 @@ else:
                                 with c4: st.markdown(f"<div style='text-align:center; background:#1A202C; border-radius:5px; padding:3px;'><b>{v_b}</b></div>", unsafe_allow_html=True)
 
                                 if pd.notnull(j['gols_a']) and pd.notnull(j['gols_b']):
-                                    st.markdown(f"<div style='text-align:center; font-size:12px; color:#00E676;'>Placar oficial: {to_int_seguro(j['gols_a'])} x {to_int_seguro(j['gols_b'])}</div>", unsafe_allow_html=True)
+                                    placar_txt = f"Placar oficial: {to_int_seguro(j['gols_a'])} x {to_int_seguro(j['gols_b'])}"
+                                    if j.get('vencedor'):
+                                        placar_txt += f" | 🏆 Vencedor: {j['vencedor']}"
+                                    st.markdown(f"<div style='text-align:center; font-size:12px; color:#00E676;'>{placar_txt}</div>", unsafe_allow_html=True)
                                 elif not ja_palpitou:
                                     st.markdown("<div style='text-align:center; font-size:12px; color:#EF4444;'>❌ Você perdeu o prazo deste jogo.</div>", unsafe_allow_html=True)
                                 st.markdown("</div>", unsafe_allow_html=True)
@@ -850,7 +932,6 @@ else:
                 }
             )
             st.markdown("---")
-
             texto_copia = f"🏆 GAZELAS BET - LIGA {liga} 🏆\n\n"
             for i, r in ranking.iterrows():
                 pos = i + 1
@@ -884,10 +965,13 @@ else:
                                 df_p = get_todos_palpites_do_jogo(j_i['id'], liga)
                                 ra, rb = j_i['gols_a'], j_i['gols_b']
                                 ra_int, rb_int = to_int_seguro(ra), to_int_seguro(rb)
-                                st.info(f"Placar Real: {ra_int if ra_int is not None else '?'} x {rb_int if rb_int is not None else '?'}")
+                                placar_real = f"{ra_int if ra_int is not None else '?'} x {rb_int if rb_int is not None else '?'}"
+                                if j_i.get('vencedor'):
+                                    placar_real += f" | 🏆 {j_i['vencedor']}"
+                                st.info(f"Placar Real: {placar_real}")
 
                                 texto_compartilhar = f"⚽ {j_i['time_a']} x {j_i['time_b']}\n"
-                                texto_compartilhar += f"📊 Placar Real: {ra_int if ra_int is not None else '?'} x {rb_int if rb_int is not None else '?'}\n\n"
+                                texto_compartilhar += f"📊 Placar Real: {placar_real}\n\n"
                                 texto_compartilhar += "🎯 Palpites:\n"
 
                                 users_p = df_p['Participante'].tolist()
@@ -921,6 +1005,7 @@ else:
 
     with tab_copa:
         df_copa = calcular_tabela_copa()
+        w = montar_chaveamento(jogos)
 
         with st.expander("🌍 Fase de Grupos — Classificação", expanded=False):
             if not df_copa.empty:
@@ -935,160 +1020,152 @@ else:
                     )
 
         with st.expander("⚔️ Chaveamento — Mata-Mata 2026", expanded=True):
-            st.markdown("""
-<style>
-.bracket { font-family: 'Arial', sans-serif; background: #0a1628; padding: 20px; border-radius: 16px; color: white; overflow-x: auto; }
-.bracket-title { text-align: center; font-size: 22px; font-weight: bold; color: #FFD700; margin-bottom: 4px; }
-.bracket-sub { text-align: center; font-size: 13px; color: #00E676; margin-bottom: 20px; }
-.bracket-container { display: flex; justify-content: center; align-items: center; gap: 0px; min-width: 700px; }
-.round { display: flex; flex-direction: column; justify-content: space-around; }
-.match { display: flex; flex-direction: column; margin: 6px 0; }
-.team { background: #1a2744; border: 1px solid #2a3a5c; border-radius: 6px; padding: 5px 8px; font-size: 11px; width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 1px 0; }
-.team:hover { background: #243560; }
-.team.winner { background: #1a3a2a; border-color: #00E676; color: #00E676; font-weight: bold; }
-.team.tbd { background: #111827; border-color: #374151; color: #6B7280; font-style: italic; }
-.connector { display: flex; align-items: center; }
-.connector-lines { display: flex; flex-direction: column; }
-.round-label { text-align: center; color: #FFD700; font-size: 11px; font-weight: bold; margin-bottom: 8px; }
-.champion { text-align: center; background: linear-gradient(135deg, #FFD700, #FFA500); color: #0a1628; border-radius: 12px; padding: 12px 20px; font-weight: bold; font-size: 14px; margin: 0 10px; }
-</style>
+            def time_box(nome, eh_vencedor=False, eh_tbd=False):
+                if eh_tbd or nome == '?':
+                    return f"<div style='background:#111827;border:1px solid #374151;border-radius:6px;padding:5px 8px;font-size:11px;color:#6B7280;font-style:italic;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:130px;'>? A definir</div>"
+                cor = "#1a3a2a" if eh_vencedor else "#1a2744"
+                borda = "#00E676" if eh_vencedor else "#2a3a5c"
+                texto_cor = "#00E676" if eh_vencedor else "white"
+                return f"<div style='background:{cor};border:1px solid {borda};border-radius:6px;padding:5px 8px;font-size:11px;color:{texto_cor};margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:130px;font-weight:{'bold' if eh_vencedor else 'normal'};'>{nome}</div>"
 
-<div class="bracket">
-<div class="bracket-title">⚽ MATA-MATA 2026</div>
-<div class="bracket-sub">Copa do Mundo — Fase Eliminatória</div>
+            def par(t1, t2, venc=None):
+                b1 = time_box(t1, t1 == venc)
+                b2 = time_box(t2, t2 == venc)
+                return f"<div style='margin:4px 0;'>{b1}{b2}</div>"
 
-<div class="bracket-container">
+            html = f"""
+<div style="background:#0a1628;padding:20px;border-radius:16px;overflow-x:auto;font-family:Arial,sans-serif;">
+<div style="text-align:center;color:#FFD700;font-size:20px;font-weight:bold;margin-bottom:4px;">⚽ MATA-MATA 2026</div>
+<div style="text-align:center;color:#00E676;font-size:12px;margin-bottom:20px;">Copa do Mundo — Fase Eliminatória</div>
+
+<div style="display:flex;align-items:center;justify-content:center;gap:4px;min-width:900px;">
 
   <!-- LADO ESQUERDO -->
-  <div style="display:flex; flex-direction:row; align-items:center;">
-
-    <!-- 16 AVOS ESQ -->
-    <div class="round">
-      <div class="round-label">16 Avos</div>
-      <div class="match"><div class="team">🇩🇪 Alemanha</div><div class="team">🇵🇾 Paraguai</div></div>
-      <div class="match"><div class="team">🇫🇷 França</div><div class="team">🇸🇪 Suécia</div></div>
-      <div class="match"><div class="team">🇿🇦 África do Sul</div><div class="team">🇨🇦 Canadá</div></div>
-      <div class="match"><div class="team">🇳🇱 Holanda</div><div class="team">🇲🇦 Marrocos</div></div>
-      <div class="match"><div class="team">🇵🇹 Portugal</div><div class="team">🇭🇷 Croácia</div></div>
-      <div class="match"><div class="team">🇪🇸 Espanha</div><div class="team">🇦🇹 Áustria</div></div>
-      <div class="match"><div class="team">🇺🇸 Estados Unidos</div><div class="team">🇧🇦 Bósnia</div></div>
-      <div class="match"><div class="team">🇧🇪 Bélgica</div><div class="team">🇸🇳 Senegal</div></div>
-    </div>
-
-    <!-- SETA -->
-    <div style="width:8px; height:400px; display:flex; flex-direction:column; justify-content:space-around;">
-      <div style="width:8px; height:50px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-      <div style="width:8px; height:50px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-      <div style="width:8px; height:50px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-      <div style="width:8px; height:50px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-    </div>
-
-    <!-- OITAVAS ESQ -->
-    <div class="round" style="margin-top:0px;">
-      <div class="round-label">Oitavas</div>
-      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Alemanha/Par</div><div class="team tbd">? França/Swe</div></div>
-      <div class="match" style="margin: 22px 0;"><div class="team tbd">? África/Can</div><div class="team tbd">? Holanda/Mar</div></div>
-      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Portugal/Cro</div><div class="team tbd">? Espanha/Áus</div></div>
-      <div class="match" style="margin: 22px 0;"><div class="team tbd">? EUA/Bósnia</div><div class="team tbd">? Bélgica/Sen</div></div>
-    </div>
-
-    <!-- SETA -->
-    <div style="width:8px; height:400px; display:flex; flex-direction:column; justify-content:space-around;">
-      <div style="width:8px; height:100px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-      <div style="width:8px; height:100px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-    </div>
-
-    <!-- QUARTAS ESQ -->
-    <div class="round">
-      <div class="round-label">Quartas</div>
-      <div class="match" style="margin: 70px 0;"><div class="team tbd">? Vencedor A</div><div class="team tbd">? Vencedor B</div></div>
-      <div class="match" style="margin: 70px 0;"><div class="team tbd">? Vencedor C</div><div class="team tbd">? Vencedor D</div></div>
-    </div>
-
-    <!-- SETA -->
-    <div style="width:8px; height:300px; display:flex; flex-direction:column; justify-content:space-around;">
-      <div style="width:8px; height:200px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-    </div>
-
-    <!-- SEMI ESQ -->
-    <div class="round">
-      <div class="round-label">Semi</div>
-      <div class="match" style="margin: 160px 0;"><div class="team tbd">? Semi 1</div><div class="team tbd">? Semi 2</div></div>
-    </div>
-
-    <div style="width:8px;"></div>
-
+  <div>
+    <div style="color:#FFD700;font-size:11px;font-weight:bold;text-align:center;margin-bottom:6px;">16 Avos</div>
+    {par('🇩🇪 Alemanha', '🇵🇾 Paraguai', w.get('L1'))}
+    {par('🇫🇷 França', '🇸🇪 Suécia', w.get('L2'))}
+    {par('🇿🇦 África do Sul', '🇨🇦 Canadá', w.get('L3'))}
+    {par('🇳🇱 Holanda', '🇲🇦 Marrocos', w.get('L4'))}
+    {par('🇵🇹 Portugal', '🇭🇷 Croácia', w.get('L5'))}
+    {par('🇪🇸 Espanha', '🇦🇹 Áustria', w.get('L6'))}
+    {par('🇺🇸 Estados Unidos', '🇧🇦 Bósnia', w.get('L7'))}
+    {par('🇧🇪 Bélgica', '🇸🇳 Senegal', w.get('L8'))}
   </div>
+
+  <div style="width:6px;"></div>
+
+  <!-- OITAVAS ESQ -->
+  <div>
+    <div style="color:#FFD700;font-size:11px;font-weight:bold;text-align:center;margin-bottom:6px;">Oitavas</div>
+    <div style="margin-top:12px;">
+    {par(w.get('L1','?'), w.get('L2','?'), w.get('OL1'))}
+    </div>
+    <div style="margin-top:28px;">
+    {par(w.get('L3','?'), w.get('L4','?'), w.get('OL2'))}
+    </div>
+    <div style="margin-top:28px;">
+    {par(w.get('L5','?'), w.get('L6','?'), w.get('OL3'))}
+    </div>
+    <div style="margin-top:28px;">
+    {par(w.get('L7','?'), w.get('L8','?'), w.get('OL4'))}
+    </div>
+  </div>
+
+  <div style="width:6px;"></div>
+
+  <!-- QUARTAS ESQ -->
+  <div>
+    <div style="color:#FFD700;font-size:11px;font-weight:bold;text-align:center;margin-bottom:6px;">Quartas</div>
+    <div style="margin-top:40px;">
+    {par(w.get('OL1','?'), w.get('OL2','?'), w.get('QL1'))}
+    </div>
+    <div style="margin-top:80px;">
+    {par(w.get('OL3','?'), w.get('OL4','?'), w.get('QL2'))}
+    </div>
+  </div>
+
+  <div style="width:6px;"></div>
+
+  <!-- SEMI ESQ -->
+  <div>
+    <div style="color:#FFD700;font-size:11px;font-weight:bold;text-align:center;margin-bottom:6px;">Semi</div>
+    <div style="margin-top:100px;">
+    {par(w.get('QL1','?'), w.get('QL2','?'), w.get('SL'))}
+    </div>
+  </div>
+
+  <div style="width:6px;"></div>
 
   <!-- CAMPEÃO -->
-  <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; margin: 0 8px;">
-    <div class="champion">🏆<br>CAMPEÃO</div>
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;margin:0 8px;">
+    <div style="background:linear-gradient(135deg,#FFD700,#FFA500);color:#0a1628;border-radius:12px;padding:14px 10px;font-weight:bold;font-size:13px;text-align:center;">
+      🏆<br>CAMPEÃO<br>
+      <span style="font-size:11px;">{w.get('CAMP','?') if w.get('CAMP','?') != '?' else '???'}</span>
+    </div>
   </div>
+
+  <div style="width:6px;"></div>
+
+  <!-- SEMI DIR -->
+  <div>
+    <div style="color:#FFD700;font-size:11px;font-weight:bold;text-align:center;margin-bottom:6px;">Semi</div>
+    <div style="margin-top:100px;">
+    {par(w.get('QR1','?'), w.get('QR2','?'), w.get('SR'))}
+    </div>
+  </div>
+
+  <div style="width:6px;"></div>
+
+  <!-- QUARTAS DIR -->
+  <div>
+    <div style="color:#FFD700;font-size:11px;font-weight:bold;text-align:center;margin-bottom:6px;">Quartas</div>
+    <div style="margin-top:40px;">
+    {par(w.get('OR1','?'), w.get('OR2','?'), w.get('QR1'))}
+    </div>
+    <div style="margin-top:80px;">
+    {par(w.get('OR3','?'), w.get('OR4','?'), w.get('QR2'))}
+    </div>
+  </div>
+
+  <div style="width:6px;"></div>
+
+  <!-- OITAVAS DIR -->
+  <div>
+    <div style="color:#FFD700;font-size:11px;font-weight:bold;text-align:center;margin-bottom:6px;">Oitavas</div>
+    <div style="margin-top:12px;">
+    {par(w.get('R1','?'), w.get('R2','?'), w.get('OR1'))}
+    </div>
+    <div style="margin-top:28px;">
+    {par(w.get('R3','?'), w.get('R4','?'), w.get('OR2'))}
+    </div>
+    <div style="margin-top:28px;">
+    {par(w.get('R5','?'), w.get('R6','?'), w.get('OR3'))}
+    </div>
+    <div style="margin-top:28px;">
+    {par(w.get('R7','?'), w.get('R8','?'), w.get('OR4'))}
+    </div>
+  </div>
+
+  <div style="width:6px;"></div>
 
   <!-- LADO DIREITO -->
-  <div style="display:flex; flex-direction:row-reverse; align-items:center;">
-
-    <!-- 16 AVOS DIR -->
-    <div class="round">
-      <div class="round-label">16 Avos</div>
-      <div class="match"><div class="team">🇧🇷 Brasil</div><div class="team">🇯🇵 Japão</div></div>
-      <div class="match"><div class="team">🇨🇮 Costa do Marfim</div><div class="team">🇳🇴 Noruega</div></div>
-      <div class="match"><div class="team">🇲🇽 México</div><div class="team">🇪🇨 Equador</div></div>
-      <div class="match"><div class="team">🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra</div><div class="team">🇨🇩 Congo</div></div>
-      <div class="match"><div class="team">🇦🇷 Argentina</div><div class="team">🇨🇻 Cabo Verde</div></div>
-      <div class="match"><div class="team">🇦🇺 Austrália</div><div class="team">🇪🇬 Egito</div></div>
-      <div class="match"><div class="team">🇨🇭 Suíça</div><div class="team">🇩🇿 Argélia</div></div>
-      <div class="match"><div class="team">🇨🇴 Colômbia</div><div class="team">🇬🇭 Gana</div></div>
-    </div>
-
-    <!-- SETA -->
-    <div style="width:8px; height:400px; display:flex; flex-direction:column; justify-content:space-around;">
-      <div style="width:8px; height:50px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-      <div style="width:8px; height:50px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-      <div style="width:8px; height:50px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-      <div style="width:8px; height:50px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-    </div>
-
-    <!-- OITAVAS DIR -->
-    <div class="round">
-      <div class="round-label">Oitavas</div>
-      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Brasil/Japão</div><div class="team tbd">? CIV/Noruega</div></div>
-      <div class="match" style="margin: 22px 0;"><div class="team tbd">? México/Equ</div><div class="team tbd">? Ing/Congo</div></div>
-      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Arg/Cabo V</div><div class="team tbd">? Aus/Egito</div></div>
-      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Suíça/Alg</div><div class="team tbd">? Col/Gana</div></div>
-    </div>
-
-    <!-- SETA -->
-    <div style="width:8px; height:400px; display:flex; flex-direction:column; justify-content:space-around;">
-      <div style="width:8px; height:100px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-      <div style="width:8px; height:100px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-    </div>
-
-    <!-- QUARTAS DIR -->
-    <div class="round">
-      <div class="round-label">Quartas</div>
-      <div class="match" style="margin: 70px 0;"><div class="team tbd">? Vencedor E</div><div class="team tbd">? Vencedor F</div></div>
-      <div class="match" style="margin: 70px 0;"><div class="team tbd">? Vencedor G</div><div class="team tbd">? Vencedor H</div></div>
-    </div>
-
-    <!-- SETA -->
-    <div style="width:8px; height:300px; display:flex; flex-direction:column; justify-content:space-around;">
-      <div style="width:8px; height:200px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
-    </div>
-
-    <!-- SEMI DIR -->
-    <div class="round">
-      <div class="round-label">Semi</div>
-      <div class="match" style="margin: 160px 0;"><div class="team tbd">? Semi 3</div><div class="team tbd">? Semi 4</div></div>
-    </div>
-
-    <div style="width:8px;"></div>
-
+  <div>
+    <div style="color:#FFD700;font-size:11px;font-weight:bold;text-align:center;margin-bottom:6px;">16 Avos</div>
+    {par('🇧🇷 Brasil', '🇯🇵 Japão', w.get('R1'))}
+    {par('🇨🇮 Costa do Marfim', '🇳🇴 Noruega', w.get('R2'))}
+    {par('🇲🇽 México', '🇪🇨 Equador', w.get('R3'))}
+    {par('🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra', '🇨🇩 Congo', w.get('R4'))}
+    {par('🇦🇷 Argentina', '🇨🇻 Cabo Verde', w.get('R5'))}
+    {par('🇦🇺 Austrália', '🇪🇬 Egito', w.get('R6'))}
+    {par('🇨🇭 Suíça', '🇩🇿 Argélia', w.get('R7'))}
+    {par('🇨🇴 Colômbia', '🇬🇭 Gana', w.get('R8'))}
   </div>
 
 </div>
 </div>
-""", unsafe_allow_html=True)
+"""
+            st.markdown(html, unsafe_allow_html=True)
 
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
@@ -1107,5 +1184,5 @@ else:
         """, unsafe_allow_html=True)
 
 # RODAPÉ
-APP_VERSION = "v1.6 — correção limite 1000 registros + função única de ranking (2026-06-24)"
+APP_VERSION = "v1.7 — chaveamento mata-mata + vencedor pênaltis + emojis ranking (2026-06-24)"
 st.markdown(f"<div class='footer'>CRIADO POR LUCAS ALBERTIN • GAZELAS BET 2026<br><span style='opacity:0.5;'>{APP_VERSION}</span></div>", unsafe_allow_html=True)
