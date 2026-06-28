@@ -1018,8 +1018,8 @@ else:
                         use_container_width=True,
                         hide_index=True
                     )
-
-       with st.expander("⚔️ Chaveamento — Mata-Mata 2026", expanded=True):
+    
+    with st.expander("⚔️ Chaveamento — Mata-Mata 2026", expanded=True):
             def time_box(nome, eh_vencedor=False):
                 if not nome or nome == '?':
                     return f"<div style='background:#111827;border:1px solid #374151;border-radius:5px;padding:4px 6px;font-size:10px;color:#6B7280;font-style:italic;margin:1px 0;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>? A definir</div>"
