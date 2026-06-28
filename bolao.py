@@ -919,7 +919,7 @@ else:
                             st.warning("🔒 Oculto até o início do jogo.")
                         st.markdown("---")
 
-   with tab_copa:
+    with tab_copa:
         df_copa = calcular_tabela_copa()
 
         with st.expander("🌍 Fase de Grupos — Classificação", expanded=False):
