@@ -1019,122 +1019,121 @@ else:
                         hide_index=True
                     )
     
-    with st.expander("⚔️ Chaveamento — Mata-Mata 2026", expanded=True):
-            def time_box(nome, eh_vencedor=False):
-                if not nome or nome == '?':
-                    return f"<div style='background:#111827;border:1px solid #374151;border-radius:5px;padding:4px 6px;font-size:10px;color:#6B7280;font-style:italic;margin:1px 0;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>? A definir</div>"
-                cor = "#1a3a2a" if eh_vencedor else "#1a2744"
-                borda = "#00E676" if eh_vencedor else "#2a3a5c"
-                texto_cor = "#00E676" if eh_vencedor else "white"
-                peso = "bold" if eh_vencedor else "normal"
-                return f"<div style='background:{cor};border:1px solid {borda};border-radius:5px;padding:4px 6px;font-size:10px;color:{texto_cor};margin:1px 0;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:{peso};'>{nome}</div>"
+   with tab_copa:
+        df_copa = calcular_tabela_copa()
+        w = montar_chaveamento(jogos)
 
-            def par(t1, t2, venc=None):
-                return f"<div style='margin:3px 0;'>{time_box(t1, t1==venc and venc!='?')}{time_box(t2, t2==venc and venc!='?')}</div>"
+        def time_box(nome, eh_vencedor=False):
+            if not nome or nome == '?':
+                return "<div style='background:#111827;border:1px solid #374151;border-radius:5px;padding:4px 6px;font-size:10px;color:#6B7280;font-style:italic;margin:1px 0;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>? A definir</div>"
+            cor = "#1a3a2a" if eh_vencedor else "#1a2744"
+            borda = "#00E676" if eh_vencedor else "#2a3a5c"
+            texto_cor = "#00E676" if eh_vencedor else "white"
+            peso = "bold" if eh_vencedor else "normal"
+            return f"<div style='background:{cor};border:1px solid {borda};border-radius:5px;padding:4px 6px;font-size:10px;color:{texto_cor};margin:1px 0;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:{peso};'>{nome}</div>"
 
-            def coluna(titulo, pares_html, margin_top=0):
-                return f"""
-                <div style='display:flex;flex-direction:column;'>
-                    <div style='color:#FFD700;font-size:10px;font-weight:bold;text-align:center;margin-bottom:4px;'>{titulo}</div>
-                    <div style='margin-top:{margin_top}px;'>{pares_html}</div>
-                </div>"""
+        def par(t1, t2, venc=None):
+            return f"<div style='margin:3px 0;'>{time_box(t1, t1==venc and venc!='?')}{time_box(t2, t2==venc and venc!='?')}</div>"
 
-            def separador(largura=6):
-                return f"<div style='width:{largura}px;flex-shrink:0;'></div>"
+        def coluna(titulo, pares_html, margin_top=0):
+            return f"<div style='display:flex;flex-direction:column;'><div style='color:#FFD700;font-size:10px;font-weight:bold;text-align:center;margin-bottom:4px;'>{titulo}</div><div style='margin-top:{margin_top}px;'>{pares_html}</div></div>"
 
-            # 16 avos esquerdo
-            avos_esq = (
-                par('🇩🇪 Alemanha', '🇵🇾 Paraguai', w.get('L1')) +
-                par('🇫🇷 França', '🇸🇪 Suécia', w.get('L2')) +
-                par('🇿🇦 África do Sul', '🇨🇦 Canadá', w.get('L3')) +
-                par('🇳🇱 Holanda', '🇲🇦 Marrocos', w.get('L4')) +
-                par('🇵🇹 Portugal', '🇭🇷 Croácia', w.get('L5')) +
-                par('🇪🇸 Espanha', '🇦🇹 Áustria', w.get('L6')) +
-                par('🇺🇸 EUA', '🇧🇦 Bósnia', w.get('L7')) +
-                par('🇧🇪 Bélgica', '🇸🇳 Senegal', w.get('L8'))
-            )
+        def sep(largura=6):
+            return f"<div style='width:{largura}px;flex-shrink:0;'></div>"
 
-            # Oitavas esquerdo
-            oitavas_esq = (
-                f"<div style='margin-top:10px;'>{par(w.get('L1','?'), w.get('L2','?'), w.get('OL1'))}</div>" +
-                f"<div style='margin-top:26px;'>{par(w.get('L3','?'), w.get('L4','?'), w.get('OL2'))}</div>" +
-                f"<div style='margin-top:26px;'>{par(w.get('L5','?'), w.get('L6','?'), w.get('OL3'))}</div>" +
-                f"<div style='margin-top:26px;'>{par(w.get('L7','?'), w.get('L8','?'), w.get('OL4'))}</div>"
-            )
+        avos_esq = (
+            par('🇩🇪 Alemanha', '🇵🇾 Paraguai', w.get('L1')) +
+            par('🇫🇷 França', '🇸🇪 Suécia', w.get('L2')) +
+            par('🇿🇦 África do Sul', '🇨🇦 Canadá', w.get('L3')) +
+            par('🇳🇱 Holanda', '🇲🇦 Marrocos', w.get('L4')) +
+            par('🇵🇹 Portugal', '🇭🇷 Croácia', w.get('L5')) +
+            par('🇪🇸 Espanha', '🇦🇹 Áustria', w.get('L6')) +
+            par('🇺🇸 EUA', '🇧🇦 Bósnia', w.get('L7')) +
+            par('🇧🇪 Bélgica', '🇸🇳 Senegal', w.get('L8'))
+        )
+        oitavas_esq = (
+            f"<div style='margin-top:10px;'>{par(w.get('L1','?'), w.get('L2','?'), w.get('OL1'))}</div>" +
+            f"<div style='margin-top:26px;'>{par(w.get('L3','?'), w.get('L4','?'), w.get('OL2'))}</div>" +
+            f"<div style='margin-top:26px;'>{par(w.get('L5','?'), w.get('L6','?'), w.get('OL3'))}</div>" +
+            f"<div style='margin-top:26px;'>{par(w.get('L7','?'), w.get('L8','?'), w.get('OL4'))}</div>"
+        )
+        quartas_esq = (
+            f"<div style='margin-top:36px;'>{par(w.get('OL1','?'), w.get('OL2','?'), w.get('QL1'))}</div>" +
+            f"<div style='margin-top:74px;'>{par(w.get('OL3','?'), w.get('OL4','?'), w.get('QL2'))}</div>"
+        )
+        semi_esq = f"<div style='margin-top:95px;'>{par(w.get('QL1','?'), w.get('QL2','?'), w.get('SL'))}</div>"
 
-            # Quartas esquerdo
-            quartas_esq = (
-                f"<div style='margin-top:36px;'>{par(w.get('OL1','?'), w.get('OL2','?'), w.get('QL1'))}</div>" +
-                f"<div style='margin-top:74px;'>{par(w.get('OL3','?'), w.get('OL4','?'), w.get('QL2'))}</div>"
-            )
+        avos_dir = (
+            par('🇧🇷 Brasil', '🇯🇵 Japão', w.get('R1')) +
+            par('🇨🇮 C. do Marfim', '🇳🇴 Noruega', w.get('R2')) +
+            par('🇲🇽 México', '🇪🇨 Equador', w.get('R3')) +
+            par('🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra', '🇨🇩 Congo', w.get('R4')) +
+            par('🇦🇷 Argentina', '🇨🇻 Cabo Verde', w.get('R5')) +
+            par('🇦🇺 Austrália', '🇪🇬 Egito', w.get('R6')) +
+            par('🇨🇭 Suíça', '🇩🇿 Argélia', w.get('R7')) +
+            par('🇨🇴 Colômbia', '🇬🇭 Gana', w.get('R8'))
+        )
+        oitavas_dir = (
+            f"<div style='margin-top:10px;'>{par(w.get('R1','?'), w.get('R2','?'), w.get('OR1'))}</div>" +
+            f"<div style='margin-top:26px;'>{par(w.get('R3','?'), w.get('R4','?'), w.get('OR2'))}</div>" +
+            f"<div style='margin-top:26px;'>{par(w.get('R5','?'), w.get('R6','?'), w.get('OR3'))}</div>" +
+            f"<div style='margin-top:26px;'>{par(w.get('R7','?'), w.get('R8','?'), w.get('OR4'))}</div>"
+        )
+        quartas_dir = (
+            f"<div style='margin-top:36px;'>{par(w.get('OR1','?'), w.get('OR2','?'), w.get('QR1'))}</div>" +
+            f"<div style='margin-top:74px;'>{par(w.get('OR3','?'), w.get('OR4','?'), w.get('QR2'))}</div>"
+        )
+        semi_dir = f"<div style='margin-top:95px;'>{par(w.get('QR1','?'), w.get('QR2','?'), w.get('SR'))}</div>"
 
-            # Semi esquerdo
-            semi_esq = f"<div style='margin-top:95px;'>{par(w.get('QL1','?'), w.get('QL2','?'), w.get('SL'))}</div>"
+        camp = w.get('CAMP', '?')
+        camp_txt = camp if camp != '?' else '???'
 
-            # 16 avos direito
-            avos_dir = (
-                par('🇧🇷 Brasil', '🇯🇵 Japão', w.get('R1')) +
-                par('🇨🇮 C. do Marfim', '🇳🇴 Noruega', w.get('R2')) +
-                par('🇲🇽 México', '🇪🇨 Equador', w.get('R3')) +
-                par('🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra', '🇨🇩 Congo', w.get('R4')) +
-                par('🇦🇷 Argentina', '🇨🇻 Cabo Verde', w.get('R5')) +
-                par('🇦🇺 Austrália', '🇪🇬 Egito', w.get('R6')) +
-                par('🇨🇭 Suíça', '🇩🇿 Argélia', w.get('R7')) +
-                par('🇨🇴 Colômbia', '🇬🇭 Gana', w.get('R8'))
-            )
-
-            # Oitavas direito
-            oitavas_dir = (
-                f"<div style='margin-top:10px;'>{par(w.get('R1','?'), w.get('R2','?'), w.get('OR1'))}</div>" +
-                f"<div style='margin-top:26px;'>{par(w.get('R3','?'), w.get('R4','?'), w.get('OR2'))}</div>" +
-                f"<div style='margin-top:26px;'>{par(w.get('R5','?'), w.get('R6','?'), w.get('OR3'))}</div>" +
-                f"<div style='margin-top:26px;'>{par(w.get('R7','?'), w.get('R8','?'), w.get('OR4'))}</div>"
-            )
-
-            # Quartas direito
-            quartas_dir = (
-                f"<div style='margin-top:36px;'>{par(w.get('OR1','?'), w.get('OR2','?'), w.get('QR1'))}</div>" +
-                f"<div style='margin-top:74px;'>{par(w.get('OR3','?'), w.get('OR4','?'), w.get('QR2'))}</div>"
-            )
-
-            # Semi direito
-            semi_dir = f"<div style='margin-top:95px;'>{par(w.get('QR1','?'), w.get('QR2','?'), w.get('SR'))}</div>"
-
-            camp = w.get('CAMP', '?')
-            camp_txt = camp if camp != '?' else '???'
-
-            html = f"""
+        html_chaveamento = f"""
 <div style="background:#0a1628;padding:16px;border-radius:16px;">
   <div style="text-align:center;color:#FFD700;font-size:18px;font-weight:bold;margin-bottom:4px;">⚽ MATA-MATA 2026</div>
   <div style="text-align:center;color:#00E676;font-size:11px;margin-bottom:16px;">Copa do Mundo — Fase Eliminatória</div>
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
     <div style="display:flex;align-items:flex-start;justify-content:center;gap:4px;width:max-content;margin:0 auto;">
       {coluna('16 Avos', avos_esq)}
-      {separador()}
+      {sep()}
       {coluna('Oitavas', oitavas_esq)}
-      {separador()}
+      {sep()}
       {coluna('Quartas', quartas_esq)}
-      {separador()}
+      {sep()}
       {coluna('Semi', semi_esq)}
-      {separador(10)}
+      {sep(10)}
       <div style="display:flex;align-items:center;justify-content:center;margin-top:120px;">
         <div style="background:linear-gradient(135deg,#FFD700,#FFA500);color:#0a1628;border-radius:12px;padding:12px 8px;font-weight:bold;font-size:12px;text-align:center;width:80px;">
           🏆<br>CAMPEÃO<br><span style="font-size:10px;">{camp_txt}</span>
         </div>
       </div>
-      {separador(10)}
+      {sep(10)}
       {coluna('Semi', semi_dir)}
-      {separador()}
+      {sep()}
       {coluna('Quartas', quartas_dir)}
-      {separador()}
+      {sep()}
       {coluna('Oitavas', oitavas_dir)}
-      {separador()}
+      {sep()}
       {coluna('16 Avos', avos_dir)}
     </div>
   </div>
 </div>
 """
-            st.markdown(html, unsafe_allow_html=True)
+
+        with st.expander("🌍 Fase de Grupos — Classificação", expanded=False):
+            if not df_copa.empty:
+                for grupo in sorted(df_copa['Grupo'].unique()):
+                    st.markdown(f"### {grupo}")
+                    st.dataframe(
+                        df_copa[df_copa['Grupo'] == grupo]
+                        .sort_values(by=['Pts', 'SG', 'GP'], ascending=False)
+                        .drop(columns=['Grupo']),
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+        with st.expander("⚔️ Chaveamento — Mata-Mata 2026", expanded=True):
+            st.markdown(html_chaveamento, unsafe_allow_html=True)
 
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
