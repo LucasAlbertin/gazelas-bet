@@ -1018,8 +1018,7 @@ else:
                         use_container_width=True,
                         hide_index=True
                     )
-    
-   with tab_copa:
+    with tab_copa:
         df_copa = calcular_tabela_copa()
         w = montar_chaveamento(jogos)
 
