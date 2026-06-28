@@ -934,28 +934,161 @@ else:
                         hide_index=True
                     )
 
-        with st.expander("⚔️ 16 Avos de Final", expanded=True):
-            jogos_16avos = jogos[jogos['fase'] == '16 avos'] if 'fase' in jogos.columns else pd.DataFrame()
-            if not jogos_16avos.empty:
-                for _, j in jogos_16avos.iterrows():
-                    ga = to_int_seguro(j['gols_a'])
-                    gb = to_int_seguro(j['gols_b'])
-                    data_fmt = j['data_apenas'] if 'data_apenas' in j else ''
-                    hora_fmt = j['hora_apenas'] if 'hora_apenas' in j else ''
+        with st.expander("⚔️ Chaveamento — Mata-Mata 2026", expanded=True):
+            st.markdown("""
+<style>
+.bracket { font-family: 'Arial', sans-serif; background: #0a1628; padding: 20px; border-radius: 16px; color: white; overflow-x: auto; }
+.bracket-title { text-align: center; font-size: 22px; font-weight: bold; color: #FFD700; margin-bottom: 4px; }
+.bracket-sub { text-align: center; font-size: 13px; color: #00E676; margin-bottom: 20px; }
+.bracket-container { display: flex; justify-content: center; align-items: center; gap: 0px; min-width: 700px; }
+.round { display: flex; flex-direction: column; justify-content: space-around; }
+.match { display: flex; flex-direction: column; margin: 6px 0; }
+.team { background: #1a2744; border: 1px solid #2a3a5c; border-radius: 6px; padding: 5px 8px; font-size: 11px; width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 1px 0; }
+.team:hover { background: #243560; }
+.team.winner { background: #1a3a2a; border-color: #00E676; color: #00E676; font-weight: bold; }
+.team.tbd { background: #111827; border-color: #374151; color: #6B7280; font-style: italic; }
+.connector { display: flex; align-items: center; }
+.connector-lines { display: flex; flex-direction: column; }
+.round-label { text-align: center; color: #FFD700; font-size: 11px; font-weight: bold; margin-bottom: 8px; }
+.champion { text-align: center; background: linear-gradient(135deg, #FFD700, #FFA500); color: #0a1628; border-radius: 12px; padding: 12px 20px; font-weight: bold; font-size: 14px; margin: 0 10px; }
+</style>
 
-                    if ga is not None and gb is not None:
-                        resultado = f"**{ga} x {gb}**"
-                        if ga > gb:
-                            linha = f"✅ {j['time_a']} {resultado} {j['time_b']} — {data_fmt} {hora_fmt}"
-                        elif gb > ga:
-                            linha = f"✅ {j['time_a']} {resultado} {j['time_b']} — {data_fmt} {hora_fmt}"
-                        else:
-                            linha = f"✅ {j['time_a']} {resultado} {j['time_b']} — {data_fmt} {hora_fmt}"
-                        st.success(linha)
-                    else:
-                        st.info(f"⏳ {j['time_a']} x {j['time_b']} — {data_fmt} às {hora_fmt}")
-            else:
-                st.caption("Nenhum jogo de 16 avos cadastrado ainda. Adicione pelo painel Admin.")
+<div class="bracket">
+<div class="bracket-title">⚽ MATA-MATA 2026</div>
+<div class="bracket-sub">Copa do Mundo — Fase Eliminatória</div>
+
+<div class="bracket-container">
+
+  <!-- LADO ESQUERDO -->
+  <div style="display:flex; flex-direction:row; align-items:center;">
+
+    <!-- 16 AVOS ESQ -->
+    <div class="round">
+      <div class="round-label">16 Avos</div>
+      <div class="match"><div class="team">🇩🇪 Alemanha</div><div class="team">🇵🇾 Paraguai</div></div>
+      <div class="match"><div class="team">🇫🇷 França</div><div class="team">🇸🇪 Suécia</div></div>
+      <div class="match"><div class="team">🇿🇦 África do Sul</div><div class="team">🇨🇦 Canadá</div></div>
+      <div class="match"><div class="team">🇳🇱 Holanda</div><div class="team">🇲🇦 Marrocos</div></div>
+      <div class="match"><div class="team">🇵🇹 Portugal</div><div class="team">🇭🇷 Croácia</div></div>
+      <div class="match"><div class="team">🇪🇸 Espanha</div><div class="team">🇦🇹 Áustria</div></div>
+      <div class="match"><div class="team">🇺🇸 Estados Unidos</div><div class="team">🇧🇦 Bósnia</div></div>
+      <div class="match"><div class="team">🇧🇪 Bélgica</div><div class="team">🇸🇳 Senegal</div></div>
+    </div>
+
+    <!-- SETA -->
+    <div style="width:8px; height:400px; display:flex; flex-direction:column; justify-content:space-around;">
+      <div style="width:8px; height:50px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+      <div style="width:8px; height:50px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+      <div style="width:8px; height:50px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+      <div style="width:8px; height:50px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+    </div>
+
+    <!-- OITAVAS ESQ -->
+    <div class="round" style="margin-top:0px;">
+      <div class="round-label">Oitavas</div>
+      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Alemanha/Par</div><div class="team tbd">? França/Swe</div></div>
+      <div class="match" style="margin: 22px 0;"><div class="team tbd">? África/Can</div><div class="team tbd">? Holanda/Mar</div></div>
+      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Portugal/Cro</div><div class="team tbd">? Espanha/Áus</div></div>
+      <div class="match" style="margin: 22px 0;"><div class="team tbd">? EUA/Bósnia</div><div class="team tbd">? Bélgica/Sen</div></div>
+    </div>
+
+    <!-- SETA -->
+    <div style="width:8px; height:400px; display:flex; flex-direction:column; justify-content:space-around;">
+      <div style="width:8px; height:100px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+      <div style="width:8px; height:100px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+    </div>
+
+    <!-- QUARTAS ESQ -->
+    <div class="round">
+      <div class="round-label">Quartas</div>
+      <div class="match" style="margin: 70px 0;"><div class="team tbd">? Vencedor A</div><div class="team tbd">? Vencedor B</div></div>
+      <div class="match" style="margin: 70px 0;"><div class="team tbd">? Vencedor C</div><div class="team tbd">? Vencedor D</div></div>
+    </div>
+
+    <!-- SETA -->
+    <div style="width:8px; height:300px; display:flex; flex-direction:column; justify-content:space-around;">
+      <div style="width:8px; height:200px; border-right:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+    </div>
+
+    <!-- SEMI ESQ -->
+    <div class="round">
+      <div class="round-label">Semi</div>
+      <div class="match" style="margin: 160px 0;"><div class="team tbd">? Semi 1</div><div class="team tbd">? Semi 2</div></div>
+    </div>
+
+    <div style="width:8px;"></div>
+
+  </div>
+
+  <!-- CAMPEÃO -->
+  <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; margin: 0 8px;">
+    <div class="champion">🏆<br>CAMPEÃO</div>
+  </div>
+
+  <!-- LADO DIREITO -->
+  <div style="display:flex; flex-direction:row-reverse; align-items:center;">
+
+    <!-- 16 AVOS DIR -->
+    <div class="round">
+      <div class="round-label">16 Avos</div>
+      <div class="match"><div class="team">🇧🇷 Brasil</div><div class="team">🇯🇵 Japão</div></div>
+      <div class="match"><div class="team">🇨🇮 Costa do Marfim</div><div class="team">🇳🇴 Noruega</div></div>
+      <div class="match"><div class="team">🇲🇽 México</div><div class="team">🇪🇨 Equador</div></div>
+      <div class="match"><div class="team">🏴󠁧󠁢󠁥󠁮󠁧󠁿 Inglaterra</div><div class="team">🇨🇩 Congo</div></div>
+      <div class="match"><div class="team">🇦🇷 Argentina</div><div class="team">🇨🇻 Cabo Verde</div></div>
+      <div class="match"><div class="team">🇦🇺 Austrália</div><div class="team">🇪🇬 Egito</div></div>
+      <div class="match"><div class="team">🇨🇭 Suíça</div><div class="team">🇩🇿 Argélia</div></div>
+      <div class="match"><div class="team">🇨🇴 Colômbia</div><div class="team">🇬🇭 Gana</div></div>
+    </div>
+
+    <!-- SETA -->
+    <div style="width:8px; height:400px; display:flex; flex-direction:column; justify-content:space-around;">
+      <div style="width:8px; height:50px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+      <div style="width:8px; height:50px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+      <div style="width:8px; height:50px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+      <div style="width:8px; height:50px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+    </div>
+
+    <!-- OITAVAS DIR -->
+    <div class="round">
+      <div class="round-label">Oitavas</div>
+      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Brasil/Japão</div><div class="team tbd">? CIV/Noruega</div></div>
+      <div class="match" style="margin: 22px 0;"><div class="team tbd">? México/Equ</div><div class="team tbd">? Ing/Congo</div></div>
+      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Arg/Cabo V</div><div class="team tbd">? Aus/Egito</div></div>
+      <div class="match" style="margin: 22px 0;"><div class="team tbd">? Suíça/Alg</div><div class="team tbd">? Col/Gana</div></div>
+    </div>
+
+    <!-- SETA -->
+    <div style="width:8px; height:400px; display:flex; flex-direction:column; justify-content:space-around;">
+      <div style="width:8px; height:100px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+      <div style="width:8px; height:100px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+    </div>
+
+    <!-- QUARTAS DIR -->
+    <div class="round">
+      <div class="round-label">Quartas</div>
+      <div class="match" style="margin: 70px 0;"><div class="team tbd">? Vencedor E</div><div class="team tbd">? Vencedor F</div></div>
+      <div class="match" style="margin: 70px 0;"><div class="team tbd">? Vencedor G</div><div class="team tbd">? Vencedor H</div></div>
+    </div>
+
+    <!-- SETA -->
+    <div style="width:8px; height:300px; display:flex; flex-direction:column; justify-content:space-around;">
+      <div style="width:8px; height:200px; border-left:2px solid #374151; border-top:2px solid #374151; border-bottom:2px solid #374151;"></div>
+    </div>
+
+    <!-- SEMI DIR -->
+    <div class="round">
+      <div class="round-label">Semi</div>
+      <div class="match" style="margin: 160px 0;"><div class="team tbd">? Semi 3</div><div class="team tbd">? Semi 4</div></div>
+    </div>
+
+    <div style="width:8px;"></div>
+
+  </div>
+
+</div>
+</div>
+""", unsafe_allow_html=True)
 
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
