@@ -735,7 +735,7 @@ else:
     c2.metric("⚽ Jogos Ativos", len(jogos))
     c3.metric("🏆 Líder da Liga", ranking.iloc[0]['Participante'] if not ranking.empty else "-")
 
-    tab1, tab2, tab3, tab_copa, tab_regras = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras"])
+    tab1, tab2, tab3, tab_copa, tab_regras, tab_stats = st.tabs(["⚽ Palpites", "🏆 Ranking", "👀 Espiar", "🌍 Copa", "📜 Regras", "📰 Revista"])
 
     with tab1:
         if not jogos.empty:
@@ -956,6 +956,95 @@ else:
                         st.info(f"⏳ {j['time_a']} x {j['time_b']} — {data_fmt} às {hora_fmt}")
             else:
                 st.caption("Nenhum jogo de 16 avos cadastrado ainda. Adicione pelo painel Admin.")
+    with tab_stats:
+        st.subheader("📰 Gazelas Bet — Revista da Rodada")
+        st.caption("Resumo completo para a capa da revista!")
+
+        ranking_stats = calcular_ranking(liga)
+
+        if not ranking_stats.empty:
+            total_jogadores = len(ranking_stats)
+            lider = ranking_stats.iloc[0]
+            vice = ranking_stats.iloc[1] if total_jogadores > 1 else None
+            ultimo = ranking_stats.iloc[-1]
+
+            # ── GRÁFICO DE BARRAS ──
+            st.markdown("### 📊 Placar Geral da Liga")
+            import altair as alt
+            chart_data = ranking_stats.copy()
+            chart_data['Cor'] = ['🥇 Líder' if i == 0
+                                 else '🔴 Zona de Rebaixamento' if i >= total_jogadores - 4
+                                 else '⚽ Disputando' for i in range(total_jogadores)]
+
+            chart = alt.Chart(chart_data).mark_bar().encode(
+                x=alt.X('Pontos:Q', title='Pontos'),
+                y=alt.Y('Participante:N', sort='-x', title=''),
+                color=alt.Color('Cor:N', scale=alt.Scale(
+                    domain=['🥇 Líder', '⚽ Disputando', '🔴 Zona de Rebaixamento'],
+                    range=['#FFD700', '#00E676', '#EF4444']
+                )),
+                tooltip=['Participante', 'Pontos', 'Cor']
+            ).properties(height=500)
+
+            st.altair_chart(chart, use_container_width=True)
+
+            # ── PROBABILIDADES ──
+            st.markdown("### 🏆 Quem Pode Ganhar o Bolão?")
+            pontos_lider = ranking_stats.iloc[0]['Pontos']
+            jogos_restantes = len(jogos[jogos['gols_a'].isna()]) if 'gols_a' in jogos.columns else 0
+            max_pontos_possiveis = jogos_restantes * 3
+
+            chances = []
+            for _, row in ranking_stats.iterrows():
+                diff = pontos_lider - row['Pontos']
+                if diff <= max_pontos_possiveis:
+                    chance = max(0, round(100 - (diff / max(max_pontos_possiveis, 1)) * 100))
+                    chances.append({'Participante': row['Participante'], 'Pontos': row['Pontos'], 'Chance %': chance})
+
+            df_chances = pd.DataFrame(chances)
+            if not df_chances.empty:
+                for _, r in df_chances.iterrows():
+                    barra = '█' * int(r['Chance %'] / 5) + '░' * (20 - int(r['Chance %'] / 5))
+                    st.markdown(f"**{r['Participante']}** — {r['Pontos']} pts &nbsp;&nbsp; `{barra}` {r['Chance %']}%")
+
+            # ── ZONA DE REBAIXAMENTO ──
+            st.markdown("### 🔴 Zona de Rebaixamento — Os 4 Últimos")
+            rebaixados = ranking_stats.tail(4).iloc[::-1]
+            for i, (_, row) in enumerate(rebaixados.iterrows()):
+                pos = total_jogadores - i
+                st.error(f"**{pos}º {row['Participante']}** — {row['Pontos']} pts 😬")
+
+            # ── RESUMO PARA COPIAR ──
+            st.markdown("### 📋 Texto para a Capa da Revista")
+            diff_1_2 = lider['Pontos'] - (vice['Pontos'] if vice is not None else 0)
+            texto_revista = f"""📰 GAZELAS BET — FASE DE GRUPOS ENCERRADA 🏆
+
+🥇 LÍDER: {lider['Participante']} com {lider['Pontos']} pts
+"""
+            if vice is not None:
+                texto_revista += f"🥈 Vice: {vice['Participante']} com {vice['Pontos']} pts ({diff_1_2} pts atrás)\n"
+
+            texto_revista += f"""
+📊 CLASSIFICAÇÃO COMPLETA:
+"""
+            for i, row in ranking_stats.iterrows():
+                emoji = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🔴" if i >= total_jogadores - 4 else "▪️"
+                texto_revista += f"{emoji} {i+1}º {row['Participante']} — {row['Pontos']} pts\n"
+
+            texto_revista += f"""
+🔴 REBAIXADOS PARA A SEGUNDA DIVISÃO:
+"""
+            for _, row in ranking_stats.tail(4).iterrows():
+                texto_revista += f"😬 {row['Participante']} — {row['Pontos']} pts\n"
+
+            texto_revista += f"""
+🎯 Jogos restantes: {jogos_restantes}
+⚽ Máximo de pontos ainda disponíveis: {max_pontos_possiveis} pts
+
+🏆 Gazelas Bet 2026 — Quem vai ser o campeão?"""
+
+            st.code(texto_revista, language="text")
+    
 
     with tab_regras:
         st.subheader("📜 Regulamento do Bolão")
