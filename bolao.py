@@ -648,11 +648,13 @@ elif st.session_state.usuario_logado == "ADMIN":
                         st.caption("ℹ️ Nenhum participante ingressou nesta liga ainda.")
                 st.markdown("<hr style='margin:15px 0; border-color:rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
 
-    st.write("📊 **Resultados dos Jogos:**")
+   st.write("📊 **Resultados dos Jogos:**")
     if not jogos.empty:
         for _, jo in jogos.iterrows():
             fase_jo = jo.get('fase', 'Fase de Grupos')
             eh_mata_mata = fase_jo in FASES_MATA_MATA
+
+            # Linha principal
             if eh_mata_mata:
                 c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 2, 2, 1])
             else:
@@ -681,25 +683,29 @@ elif st.session_state.usuario_logado == "ADMIN":
                     deletar_jogo(jo['id'])
                     st.rerun()
 
-    st.markdown("---")
-    st.subheader("➕ Novo Jogo")
-    c1, c2, c3, c4 = st.columns(4)
-    t_a = c1.text_input("Time A")
-    t_b = c2.text_input("Time B")
-    fas = c3.selectbox("Fase", ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"])
-    dat = c4.text_input("Data", value="2026-06-01 16:00:00")
-    if st.button("Criar Jogo"):
-        if t_a and t_b:
-            adicionar_novo_jogo(t_a, t_b, dat, fas)
-            st.rerun()
-        else:
-            st.warning("Preencha os dois times.")
-
-    if st.checkbox("RESET TOTAL (ÁREA DE PERIGO)"):
-        st.warning("Essa ação apaga TODOS os usuários, ligas e palpites. Não pode ser desfeita.")
-        if st.button("LIMPAR BANCO COMPLETO"):
-            reset_banco_dados()
-            st.rerun()
+            # Botão de editar horário
+            with st.expander(f"✏️ Editar data/hora — {jo['time_a']} x {jo['time_b']}", expanded=False):
+                col_data, col_fase, col_btn = st.columns([3, 2, 1])
+                nova_data = col_data.text_input(
+                    "Nova data/hora:",
+                    value=str(jo['data_hora']).replace('T', ' '),
+                    key=f"edit_data_{jo['id']}",
+                    placeholder="2026-07-01 20:00:00"
+                )
+                nova_fase = col_fase.selectbox(
+                    "Fase:",
+                    ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"],
+                    index=["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"].index(fase_jo) if fase_jo in ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"] else 0,
+                    key=f"edit_fase_{jo['id']}"
+                )
+                if col_btn.button("Salvar", key=f"edit_btn_{jo['id']}"):
+                    supabase.table("jogos").update({
+                        "data_hora": nova_data.strip(),
+                        "fase": nova_fase
+                    }).eq("id", int(jo['id'])).execute()
+                    st.cache_data.clear()
+                    st.success(f"✅ Jogo atualizado para {nova_data}!")
+                    st.rerun()
 
 # =========================================================
 # FLUXO 3: LOGADO - LISTAGEM DE LIGAS
