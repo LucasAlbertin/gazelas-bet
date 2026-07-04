@@ -648,7 +648,7 @@ elif st.session_state.usuario_logado == "ADMIN":
                         st.caption("ℹ️ Nenhum participante ingressou nesta liga ainda.")
                 st.markdown("<hr style='margin:15px 0; border-color:rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
 
-   st.write("📊 **Resultados dos Jogos:**")
+st.write("📊 **Resultados dos Jogos:**")
     if not jogos.empty:
         for _, jo in jogos.iterrows():
             fase_jo = jo.get('fase', 'Fase de Grupos')
