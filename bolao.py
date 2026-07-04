@@ -654,7 +654,6 @@ elif st.session_state.usuario_logado == "ADMIN":
             fase_jo = jo.get('fase', 'Fase de Grupos')
             eh_mata_mata = fase_jo in FASES_MATA_MATA
 
-            # Linha principal
             if eh_mata_mata:
                 c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 2, 2, 1])
             else:
@@ -683,8 +682,7 @@ elif st.session_state.usuario_logado == "ADMIN":
                     deletar_jogo(jo['id'])
                     st.rerun()
 
-            # Botão de editar horário
-            with st.expander(f"✏️ Editar data/hora — {jo['time_a']} x {jo['time_b']}", expanded=False):
+            with st.expander(f"✏️ Editar — {jo['time_a']} x {jo['time_b']}", expanded=False):
                 col_data, col_fase, col_btn = st.columns([3, 2, 1])
                 nova_data = col_data.text_input(
                     "Nova data/hora:",
@@ -704,8 +702,28 @@ elif st.session_state.usuario_logado == "ADMIN":
                         "fase": nova_fase
                     }).eq("id", int(jo['id'])).execute()
                     st.cache_data.clear()
-                    st.success(f"✅ Jogo atualizado para {nova_data}!")
+                    st.success(f"✅ Jogo atualizado!")
                     st.rerun()
+
+    st.markdown("---")
+    st.subheader("➕ Novo Jogo")
+    c1, c2, c3, c4 = st.columns(4)
+    t_a = c1.text_input("Time A")
+    t_b = c2.text_input("Time B")
+    fas = c3.selectbox("Fase", ["Fase de Grupos", "16 avos", "Oitavas", "Quartas", "Semifinal", "Final"])
+    dat = c4.text_input("Data", value="2026-06-01 16:00:00")
+    if st.button("Criar Jogo"):
+        if t_a and t_b:
+            adicionar_novo_jogo(t_a, t_b, dat, fas)
+            st.rerun()
+        else:
+            st.warning("Preencha os dois times.")
+
+    if st.checkbox("RESET TOTAL (ÁREA DE PERIGO)"):
+        st.warning("Essa ação apaga TODOS os usuários, ligas e palpites. Não pode ser desfeita.")
+        if st.button("LIMPAR BANCO COMPLETO"):
+            reset_banco_dados()
+            st.rerun()
 
 # =========================================================
 # FLUXO 3: LOGADO - LISTAGEM DE LIGAS
